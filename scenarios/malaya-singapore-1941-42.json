@@ -1,0 +1,727 @@
+{
+  "version": 5,
+  "view": {
+    "center": {
+      "lat": 4.16,
+      "lng": 102.25
+    },
+    "zoom": 7,
+    "mapTypeId": "satellite"
+  },
+  "playbackDuration": 90,
+  "badges": [
+    {
+      "id": "japanese-west",
+      "label": "Japanese 25th Army · western advance",
+      "lat": 7.2123,
+      "lng": 100.5909,
+      "flag": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAADICAYAAABS39xVAAAFB0lEQVR4nO3UMXIYRxAEQX5I/3f0Nylk0iAFBIHtrbvMiPbHmfrxD0DEj/UBAB8lWECGYAEZggVkCBaQIVhAhmABGYIFZAgWkCFYQIZgARmCBWQIFpAhWECGYAEZggVkCBaQIVhAhmABGYIFZAgWkCFYQIZgARmCBWQIFpAhWECGYAEZggVkCBaQIVhAhmABGYIFZAgWkCFYQIZgARmCBWQIFpAhWECGYAEZgsW3+PvHX+sTeCDB4lP+C9FXDz5KsPil74iTiPEnBIufLCMlXvwfwWIeJPHiowTrxdbxES4+S7BeZh0a8eJPCNZLrKMiXHwFwXqBdUhEi68iWA+2jodw8dUE64HWsbhpPItgPcw6EDeO5xCsh1hHoTD6BOsB1iEojTbBilsHoDi6BCts/fjl0SRYUeuHf8LoEayg9aM/abQIVsz6wZ84OgQrZP3YTx4NghWxfug3jPsJVsD6kd807iZYl1s/8BvHvQTrYuvHffO4k2Bdav2wJlo3EqxLrZ/VBOtGgnWh9aOaaN1KsC6zflATrZsJ1mXWz2mCdTPBusj6MU20bidYF1k/pQnW7QTrEuuHNNEqEKwLrB/RRKtCsC6wfkITrArBGls/oIlWiWCNrZ/PBKtEsMbWz2eCVSJYQ+vHM9GqEayh9dOZYNUI1sj64Uy0igRrZP1sJlhFgjWyfjYTrCLBGlg/molWlWANrJ/MBKtKsAbWT2aCVSVYh60fzESrTLAOWz+XCVaZYB22fi4TrDLBOmz9XCZYZYJ12Pq5TLDKBOug9WOZaNUJ1kHrpzLBqhOsg9ZPZYJVJ1gHrZ/KBKtOsA5aP5UJVp1gHbR+KhOsOsE6aP1UJlh1gnXQ+qlMsOoE66D1U5lg1QnWQeunMsGqE6xD1g9lovUEgnXQ+qFMrOoE66D1U5lg1QnWQeunMsGqE6yD1k9lglUnWAetn8oEq06wDlo/lQlWnWAdtH4qE6w6wTpo/VQmWHWCddD6qUyw6gTroPVTmWDVCdZh68cysSoTrMPWz2WCVSZYh62fywSrTLAOWz+XCVaZYB22fi4TrDLBGlg/mIlVlWANrJ/MBKtKsAbWT2aCVSVYI+tHM7EqEqyR9bOZYBUJ1sj62UywigRraP1wJlY1gjW0fjoTrBrBGls/nolViWCNrZ/PBKtEsMbWz2eCVSJYF1g/oIlVhWBdYP2EJlgVgnWJ9SOaWBUI1kXWD2lidTvBusj6KU2wbidYl1k/ponVzQTrMuvnNMG6mWBdaP2gJla3EqxLrR/VxOpGgnWp9bOaYN1IsC62ftg3jzsJ1uXWj/vGcS/BClg/8JvG3QQrYv3Ibxj3E6yQ9UM/eTQIVsz6sZ84OgQraP3gTxotghW1fvQnjB7BCls/fHk0CVbc+vGLo0uwHmAdgNJoE6yHWIegMPoE62HWUbhxPIdgPdA6EDeNZxGsB1vHQqj4aoL1Aut4CBVfRbBeYh0SseIrCNbLrKMiVPwJwXqxdWhEis8SLObxESo+SrD4yTpIIsXvCBa/JFLcRrD4FHFiSbD4FkLEdxAsIEOwgAzBAjIEC8gQLCBDsIAMwQIyBAvIECwgQ7CADMECMgQLyBAsIEOwgAzBAjIEC8gQLCBDsIAMwQIyBAvIECwgQ7CADMECMgQLyBAsIEOwgAzBAjIEC8gQLCBDsIAMwQIyBAvIECwgQ7CADMECMgQLyBAsIEOwgAzBAjL+BUrxY+N+3Ge0AAAAAElFTkSuQmCC",
+      "symbol": "tank",
+      "symbolImage": "",
+      "stars": 0,
+      "size": "L",
+      "route": [
+        {
+          "id": "japanese-west-stop-1",
+          "lat": 7.2123,
+          "lng": 100.5909,
+          "dateTime": "1941-12-08T01:45",
+          "size": "L",
+          "effect": "none"
+        },
+        {
+          "id": "japanese-west-stop-2",
+          "lat": 6.2668,
+          "lng": 100.4197,
+          "dateTime": "1941-12-13T12:00",
+          "size": "L",
+          "effect": "firing"
+        },
+        {
+          "id": "japanese-west-stop-3",
+          "lat": 4.5987,
+          "lng": 101.09,
+          "dateTime": "1941-12-28T12:00",
+          "size": "L",
+          "effect": "none"
+        },
+        {
+          "id": "japanese-west-stop-4",
+          "lat": 3.827,
+          "lng": 101.4023,
+          "dateTime": "1942-01-07T12:00",
+          "size": "L",
+          "effect": "booming"
+        },
+        {
+          "id": "japanese-west-stop-5",
+          "lat": 3.1517,
+          "lng": 101.6942,
+          "dateTime": "1942-01-11T12:00",
+          "size": "L",
+          "effect": "none"
+        },
+        {
+          "id": "japanese-west-stop-6",
+          "lat": 2.5795,
+          "lng": 102.6138,
+          "dateTime": "1942-01-14T12:00",
+          "size": "L",
+          "effect": "firing"
+        },
+        {
+          "id": "japanese-west-stop-7",
+          "lat": 2.05,
+          "lng": 102.5667,
+          "dateTime": "1942-01-18T12:00",
+          "size": "L",
+          "effect": "firing"
+        },
+        {
+          "id": "japanese-west-stop-8",
+          "lat": 2.0132,
+          "lng": 103.0571,
+          "dateTime": "1942-01-24T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "japanese-west-stop-9",
+          "lat": 1.4582,
+          "lng": 103.7649,
+          "dateTime": "1942-01-31T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "japanese-west-stop-10",
+          "lat": 1.4352,
+          "lng": 103.6986,
+          "dateTime": "1942-02-08T23:00",
+          "size": "L",
+          "effect": "firing"
+        },
+        {
+          "id": "japanese-west-stop-11",
+          "lat": 1.3639,
+          "lng": 103.7287,
+          "dateTime": "1942-02-09T12:00",
+          "size": "L",
+          "effect": "none"
+        },
+        {
+          "id": "japanese-west-stop-12",
+          "lat": 1.3279,
+          "lng": 103.7936,
+          "dateTime": "1942-02-11T12:00",
+          "size": "L",
+          "effect": "booming"
+        },
+        {
+          "id": "japanese-west-stop-13",
+          "lat": 1.2899,
+          "lng": 103.8519,
+          "dateTime": "1942-02-15T20:30",
+          "size": "L",
+          "effect": "none"
+        }
+      ],
+      "showTrail": true,
+      "visibility": {
+        "showAt": "1941-12-08T01:45",
+        "hideAt": ""
+      }
+    },
+    {
+      "id": "japanese-east",
+      "label": "Japanese 25th Army · eastern advance",
+      "lat": 6.1248,
+      "lng": 102.2378,
+      "flag": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAADICAYAAABS39xVAAAFB0lEQVR4nO3UMXIYRxAEQX5I/3f0Nylk0iAFBIHtrbvMiPbHmfrxD0DEj/UBAB8lWECGYAEZggVkCBaQIVhAhmABGYIFZAgWkCFYQIZgARmCBWQIFpAhWECGYAEZggVkCBaQIVhAhmABGYIFZAgWkCFYQIZgARmCBWQIFpAhWECGYAEZggVkCBaQIVhAhmABGYIFZAgWkCFYQIZgARmCBWQIFpAhWECGYAEZgsW3+PvHX+sTeCDB4lP+C9FXDz5KsPil74iTiPEnBIufLCMlXvwfwWIeJPHiowTrxdbxES4+S7BeZh0a8eJPCNZLrKMiXHwFwXqBdUhEi68iWA+2jodw8dUE64HWsbhpPItgPcw6EDeO5xCsh1hHoTD6BOsB1iEojTbBilsHoDi6BCts/fjl0SRYUeuHf8LoEayg9aM/abQIVsz6wZ84OgQrZP3YTx4NghWxfug3jPsJVsD6kd807iZYl1s/8BvHvQTrYuvHffO4k2Bdav2wJlo3EqxLrZ/VBOtGgnWh9aOaaN1KsC6zflATrZsJ1mXWz2mCdTPBusj6MU20bidYF1k/pQnW7QTrEuuHNNEqEKwLrB/RRKtCsC6wfkITrArBGls/oIlWiWCNrZ/PBKtEsMbWz2eCVSJYQ+vHM9GqEayh9dOZYNUI1sj64Uy0igRrZP1sJlhFgjWyfjYTrCLBGlg/molWlWANrJ/MBKtKsAbWT2aCVSVYh60fzESrTLAOWz+XCVaZYB22fi4TrDLBOmz9XCZYZYJ12Pq5TLDKBOug9WOZaNUJ1kHrpzLBqhOsg9ZPZYJVJ1gHrZ/KBKtOsA5aP5UJVp1gHbR+KhOsOsE6aP1UJlh1gnXQ+qlMsOoE66D1U5lg1QnWQeunMsGqE6xD1g9lovUEgnXQ+qFMrOoE66D1U5lg1QnWQeunMsGqE6yD1k9lglUnWAetn8oEq06wDlo/lQlWnWAdtH4qE6w6wTpo/VQmWHWCddD6qUyw6gTroPVTmWDVCdZh68cysSoTrMPWz2WCVSZYh62fywSrTLAOWz+XCVaZYB22fi4TrDLBGlg/mIlVlWANrJ/MBKtKsAbWT2aCVSVYI+tHM7EqEqyR9bOZYBUJ1sj62UywigRraP1wJlY1gjW0fjoTrBrBGls/nolViWCNrZ/PBKtEsMbWz2eCVSJYF1g/oIlVhWBdYP2EJlgVgnWJ9SOaWBUI1kXWD2lidTvBusj6KU2wbidYl1k/ponVzQTrMuvnNMG6mWBdaP2gJla3EqxLrR/VxOpGgnWp9bOaYN1IsC62ftg3jzsJ1uXWj/vGcS/BClg/8JvG3QQrYv3Ibxj3E6yQ9UM/eTQIVsz6sZ84OgQraP3gTxotghW1fvQnjB7BCls/fHk0CVbc+vGLo0uwHmAdgNJoE6yHWIegMPoE62HWUbhxPIdgPdA6EDeNZxGsB1vHQqj4aoL1Aut4CBVfRbBeYh0SseIrCNbLrKMiVPwJwXqxdWhEis8SLObxESo+SrD4yTpIIsXvCBa/JFLcRrD4FHFiSbD4FkLEdxAsIEOwgAzBAjIEC8gQLCBDsIAMwQIyBAvIECwgQ7CADMECMgQLyBAsIEOwgAzBAjIEC8gQLCBDsIAMwQIyBAvIECwgQ7CADMECMgQLyBAsIEOwgAzBAjIEC8gQLCBDsIAMwQIyBAvIECwgQ7CADMECMgQLyBAsIEOwgAzBAjL+BUrxY+N+3Ge0AAAAAElFTkSuQmCC",
+      "symbol": "helmet",
+      "symbolImage": "",
+      "stars": 0,
+      "size": "M",
+      "route": [
+        {
+          "id": "japanese-east-stop-1",
+          "lat": 6.1248,
+          "lng": 102.2378,
+          "dateTime": "1941-12-08T01:45",
+          "size": "M",
+          "effect": "firing"
+        },
+        {
+          "id": "japanese-east-stop-2",
+          "lat": 5.5312,
+          "lng": 102.1994,
+          "dateTime": "1941-12-22T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "japanese-east-stop-3",
+          "lat": 3.7974,
+          "lng": 103.3219,
+          "dateTime": "1942-01-05T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "japanese-east-stop-4",
+          "lat": 2.6522,
+          "lng": 103.6225,
+          "dateTime": "1942-01-26T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "japanese-east-stop-5",
+          "lat": 2.2758,
+          "lng": 103.8579,
+          "dateTime": "1942-01-27T12:00",
+          "size": "M",
+          "effect": "firing"
+        },
+        {
+          "id": "japanese-east-stop-6",
+          "lat": 1.7337,
+          "lng": 103.9007,
+          "dateTime": "1942-01-30T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "japanese-east-stop-7",
+          "lat": 1.4582,
+          "lng": 103.7649,
+          "dateTime": "1942-01-31T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "japanese-east-stop-8",
+          "lat": 1.3639,
+          "lng": 103.7287,
+          "dateTime": "1942-02-09T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "japanese-east-stop-9",
+          "lat": 1.2899,
+          "lng": 103.8519,
+          "dateTime": "1942-02-15T20:30",
+          "size": "M",
+          "effect": "none"
+        }
+      ],
+      "showTrail": true,
+      "visibility": {
+        "showAt": "1941-12-08T01:45",
+        "hideAt": ""
+      }
+    },
+    {
+      "id": "indian-north",
+      "label": "British-Indian northern defence",
+      "lat": 6.2668,
+      "lng": 100.4197,
+      "flag": "data:image/png;base64,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",
+      "symbol": "helmet",
+      "symbolImage": "",
+      "stars": 0,
+      "size": "L",
+      "route": [
+        {
+          "id": "indian-north-stop-1",
+          "lat": 6.2668,
+          "lng": 100.4197,
+          "dateTime": "1941-12-08T01:45",
+          "size": "L",
+          "effect": "none"
+        },
+        {
+          "id": "indian-north-stop-2",
+          "lat": 5.8202,
+          "lng": 100.4772,
+          "dateTime": "1941-12-17T12:00",
+          "size": "L",
+          "effect": "firing"
+        },
+        {
+          "id": "indian-north-stop-3",
+          "lat": 4.3,
+          "lng": 101.15,
+          "dateTime": "1941-12-30T12:00",
+          "size": "L",
+          "effect": "firing"
+        },
+        {
+          "id": "indian-north-stop-4",
+          "lat": 3.827,
+          "lng": 101.4023,
+          "dateTime": "1942-01-07T12:00",
+          "size": "M",
+          "effect": "booming"
+        },
+        {
+          "id": "indian-north-stop-5",
+          "lat": 3.1517,
+          "lng": 101.6942,
+          "dateTime": "1942-01-11T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "indian-north-stop-6",
+          "lat": 2.582,
+          "lng": 102.6191,
+          "dateTime": "1942-01-14T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "indian-north-stop-7",
+          "lat": 1.4582,
+          "lng": 103.7649,
+          "dateTime": "1942-01-31T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "indian-north-stop-8",
+          "lat": 1.3639,
+          "lng": 103.7287,
+          "dateTime": "1942-02-08T23:00",
+          "size": "M",
+          "effect": "firing"
+        },
+        {
+          "id": "indian-north-stop-9",
+          "lat": 1.2899,
+          "lng": 103.8519,
+          "dateTime": "1942-02-15T20:30",
+          "size": "S",
+          "effect": "none"
+        }
+      ],
+      "showTrail": true,
+      "visibility": {
+        "showAt": "1941-12-08T01:45",
+        "hideAt": "1942-02-15T20:30"
+      }
+    },
+    {
+      "id": "australian-twenty-second",
+      "label": "22nd Australian Brigade · eastern Johor",
+      "lat": 2.4299,
+      "lng": 103.8355,
+      "flag": "data:image/webp;base64,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",
+      "symbol": "helmet",
+      "symbolImage": "",
+      "stars": 0,
+      "size": "L",
+      "route": [
+        {
+          "id": "australian-twenty-second-stop-1",
+          "lat": 2.4299,
+          "lng": 103.8355,
+          "dateTime": "1941-12-08T01:45",
+          "size": "L",
+          "effect": "none"
+        },
+        {
+          "id": "australian-twenty-second-stop-2",
+          "lat": 2.2758,
+          "lng": 103.8579,
+          "dateTime": "1942-01-17T12:00",
+          "size": "L",
+          "effect": "none"
+        },
+        {
+          "id": "australian-twenty-second-stop-3",
+          "lat": 2.2758,
+          "lng": 103.8579,
+          "dateTime": "1942-01-27T12:00",
+          "size": "L",
+          "effect": "firing"
+        },
+        {
+          "id": "australian-twenty-second-stop-4",
+          "lat": 1.4582,
+          "lng": 103.7649,
+          "dateTime": "1942-01-31T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "australian-twenty-second-stop-5",
+          "lat": 1.4352,
+          "lng": 103.6986,
+          "dateTime": "1942-02-08T23:00",
+          "size": "L",
+          "effect": "firing"
+        },
+        {
+          "id": "australian-twenty-second-stop-6",
+          "lat": 1.3279,
+          "lng": 103.7936,
+          "dateTime": "1942-02-11T12:00",
+          "size": "M",
+          "effect": "crack"
+        },
+        {
+          "id": "australian-twenty-second-stop-7",
+          "lat": 1.2899,
+          "lng": 103.8519,
+          "dateTime": "1942-02-15T20:30",
+          "size": "S",
+          "effect": "none"
+        }
+      ],
+      "showTrail": true,
+      "visibility": {
+        "showAt": "1941-12-08T01:45",
+        "hideAt": "1942-02-15T20:30"
+      }
+    },
+    {
+      "id": "australian-twenty-seventh",
+      "label": "27th Australian Brigade · western Johor",
+      "lat": 1.7337,
+      "lng": 103.9007,
+      "flag": "data:image/webp;base64,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",
+      "symbol": "helmet",
+      "symbolImage": "",
+      "stars": 0,
+      "size": "M",
+      "route": [
+        {
+          "id": "australian-twenty-seventh-stop-1",
+          "lat": 1.7337,
+          "lng": 103.9007,
+          "dateTime": "1941-12-08T01:45",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "australian-twenty-seventh-stop-2",
+          "lat": 2.582,
+          "lng": 102.6191,
+          "dateTime": "1942-01-10T12:00",
+          "size": "L",
+          "effect": "none"
+        },
+        {
+          "id": "australian-twenty-seventh-stop-3",
+          "lat": 2.5795,
+          "lng": 102.6138,
+          "dateTime": "1942-01-14T12:00",
+          "size": "L",
+          "effect": "firing"
+        },
+        {
+          "id": "australian-twenty-seventh-stop-4",
+          "lat": 2.0425,
+          "lng": 102.654,
+          "dateTime": "1942-01-18T12:00",
+          "size": "M",
+          "effect": "firing"
+        },
+        {
+          "id": "australian-twenty-seventh-stop-5",
+          "lat": 2.0132,
+          "lng": 103.0571,
+          "dateTime": "1942-01-24T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "australian-twenty-seventh-stop-6",
+          "lat": 1.4582,
+          "lng": 103.7649,
+          "dateTime": "1942-01-30T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "australian-twenty-seventh-stop-7",
+          "lat": 1.446,
+          "lng": 103.769,
+          "dateTime": "1942-02-08T23:00",
+          "size": "M",
+          "effect": "firing"
+        },
+        {
+          "id": "australian-twenty-seventh-stop-8",
+          "lat": 1.3279,
+          "lng": 103.7936,
+          "dateTime": "1942-02-11T12:00",
+          "size": "S",
+          "effect": "none"
+        },
+        {
+          "id": "australian-twenty-seventh-stop-9",
+          "lat": 1.2899,
+          "lng": 103.8519,
+          "dateTime": "1942-02-15T20:30",
+          "size": "S",
+          "effect": "none"
+        }
+      ],
+      "showTrail": true,
+      "visibility": {
+        "showAt": "1941-12-08T01:45",
+        "hideAt": "1942-02-15T20:30"
+      }
+    },
+    {
+      "id": "indian-forty-fifth",
+      "label": "45th Indian Brigade · Muar sector",
+      "lat": 2.05,
+      "lng": 102.5667,
+      "flag": "data:image/png;base64,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",
+      "symbol": "helmet",
+      "symbolImage": "",
+      "stars": 0,
+      "size": "M",
+      "route": [
+        {
+          "id": "indian-forty-fifth-stop-1",
+          "lat": 2.05,
+          "lng": 102.5667,
+          "dateTime": "1942-01-14T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "indian-forty-fifth-stop-2",
+          "lat": 2.0425,
+          "lng": 102.654,
+          "dateTime": "1942-01-18T12:00",
+          "size": "M",
+          "effect": "firing"
+        },
+        {
+          "id": "indian-forty-fifth-stop-3",
+          "lat": 1.9759,
+          "lng": 102.883,
+          "dateTime": "1942-01-22T12:00",
+          "size": "S",
+          "effect": "crack"
+        }
+      ],
+      "showTrail": true,
+      "visibility": {
+        "showAt": "1942-01-14T12:00",
+        "hideAt": "1942-01-24T12:00"
+      }
+    },
+    {
+      "id": "japanese-landing",
+      "label": "Japanese landing fleet · Kota Bharu",
+      "lat": 6.22,
+      "lng": 102.35,
+      "flag": "data:image/webp;base64,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",
+      "symbol": "warship",
+      "symbolImage": "",
+      "stars": 0,
+      "size": "M",
+      "route": [
+        {
+          "id": "japanese-landing-stop-1",
+          "lat": 6.22,
+          "lng": 102.35,
+          "dateTime": "1941-12-08T01:45",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "japanese-landing-stop-2",
+          "lat": 6.1248,
+          "lng": 102.2378,
+          "dateTime": "1941-12-09T12:00",
+          "size": "S",
+          "effect": "firing"
+        }
+      ],
+      "showTrail": false,
+      "visibility": {
+        "showAt": "1941-12-08T01:45",
+        "hideAt": "1941-12-11T12:00"
+      }
+    }
+  ],
+  "units": [
+    {
+      "id": "force-z",
+      "name": "Force Z · Prince of Wales & Repulse",
+      "kind": "warship",
+      "image": "",
+      "lat": 1.255,
+      "lng": 103.81,
+      "size": "L",
+      "route": [
+        {
+          "id": "force-z-stop-1",
+          "lat": 1.255,
+          "lng": 103.81,
+          "dateTime": "1941-12-08T12:00",
+          "size": "L",
+          "effect": "none"
+        },
+        {
+          "id": "force-z-stop-2",
+          "lat": 3.65,
+          "lng": 104.05,
+          "dateTime": "1941-12-10T12:00",
+          "size": "L",
+          "effect": "booming"
+        }
+      ],
+      "showTrail": true,
+      "visibility": {
+        "showAt": "1941-12-08T12:00",
+        "hideAt": "1941-12-11T12:00"
+      }
+    },
+    {
+      "id": "japanese-tanks",
+      "name": "Japanese tank advance",
+      "kind": "tank",
+      "image": "",
+      "lat": 6.2668,
+      "lng": 100.4197,
+      "size": "M",
+      "route": [
+        {
+          "id": "japanese-tanks-stop-1",
+          "lat": 6.2668,
+          "lng": 100.4197,
+          "dateTime": "1941-12-13T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "japanese-tanks-stop-2",
+          "lat": 3.827,
+          "lng": 101.4023,
+          "dateTime": "1942-01-07T12:00",
+          "size": "M",
+          "effect": "firing"
+        },
+        {
+          "id": "japanese-tanks-stop-3",
+          "lat": 2.5795,
+          "lng": 102.6138,
+          "dateTime": "1942-01-14T12:00",
+          "size": "M",
+          "effect": "firing"
+        },
+        {
+          "id": "japanese-tanks-stop-4",
+          "lat": 2.0425,
+          "lng": 102.654,
+          "dateTime": "1942-01-18T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "japanese-tanks-stop-5",
+          "lat": 1.3279,
+          "lng": 103.7936,
+          "dateTime": "1942-02-11T12:00",
+          "size": "S",
+          "effect": "booming"
+        }
+      ],
+      "showTrail": false,
+      "visibility": {
+        "showAt": "1941-12-13T12:00",
+        "hideAt": ""
+      }
+    },
+    {
+      "id": "australian-artillery",
+      "name": "Australian artillery · Johor",
+      "kind": "artillery",
+      "image": "",
+      "lat": 2.5795,
+      "lng": 102.6138,
+      "size": "M",
+      "route": [
+        {
+          "id": "australian-artillery-stop-1",
+          "lat": 2.5795,
+          "lng": 102.6138,
+          "dateTime": "1942-01-14T12:00",
+          "size": "M",
+          "effect": "firing"
+        },
+        {
+          "id": "australian-artillery-stop-2",
+          "lat": 2.0425,
+          "lng": 102.654,
+          "dateTime": "1942-01-18T12:00",
+          "size": "M",
+          "effect": "firing"
+        },
+        {
+          "id": "australian-artillery-stop-3",
+          "lat": 2.0132,
+          "lng": 103.0571,
+          "dateTime": "1942-01-24T12:00",
+          "size": "M",
+          "effect": "none"
+        },
+        {
+          "id": "australian-artillery-stop-4",
+          "lat": 1.4352,
+          "lng": 103.6986,
+          "dateTime": "1942-02-08T23:00",
+          "size": "S",
+          "effect": "firing"
+        }
+      ],
+      "showTrail": false,
+      "visibility": {
+        "showAt": "1942-01-14T12:00",
+        "hideAt": "1942-02-15T20:30"
+      }
+    },
+    {
+      "id": "malay-regiment",
+      "name": "1st Battalion, Malay Regiment · Pasir Panjang",
+      "kind": "troop",
+      "image": "",
+      "lat": 1.2762,
+      "lng": 103.7915,
+      "size": "M",
+      "route": [
+        {
+          "id": "malay-regiment-stop-1",
+          "lat": 1.2762,
+          "lng": 103.7915,
+          "dateTime": "1942-02-13T12:00",
+          "size": "M",
+          "effect": "firing"
+        },
+        {
+          "id": "malay-regiment-stop-2",
+          "lat": 1.2797,
+          "lng": 103.7941,
+          "dateTime": "1942-02-14T12:00",
+          "size": "M",
+          "effect": "firing"
+        }
+      ],
+      "showTrail": false,
+      "visibility": {
+        "showAt": "1942-02-13T12:00",
+        "hideAt": "1942-02-15T20:30"
+      }
+    }
+  ],
+  "lines": []
+}

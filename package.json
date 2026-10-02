@@ -1,0 +1,30 @@
+{
+  "name": "malaya-world-war-ii",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node server/index.js --dev",
+    "build": "vite build",
+    "preview": "node server/index.js",
+    "setup:video": "playwright install chromium",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@googlemaps/js-api-loader": "^2.1.3",
+    "ffmpeg-static": "^5.3.0",
+    "lucide-react": "^1.48.0",
+    "playwright": "^1.63.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@vitejs/plugin-react": "^6.1.1",
+    "eslint": "^10.11.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.7",
+    "globals": "^17.12.0",
+    "vite": "^8.3.1"
+  }
+}
