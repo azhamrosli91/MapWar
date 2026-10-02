@@ -855,11 +855,14 @@ input {
 .map-unit-icon.is-image { border-radius: 50%; overflow: hidden; }
 .map-unit-icon.is-image img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .map-unit-icon svg, .map-unit-icon img { width: 75%; height: 75%; object-fit: contain; }
+.map-unit-icon.is-preset-image img { width: 100%; height: 100%; }
 .map-unit-icon svg { fill: currentColor; filter: drop-shadow(0 2px 2px #15242e88); }
 .map-unit-label { max-width: 100%; padding: calc(3px * var(--badge-scale)) calc(6px * var(--badge-scale)); border-radius: 4px; background: #141b2a; font-family: "Barlow Condensed", "Arial Narrow", sans-serif; font-size: calc(12px * var(--badge-scale)); font-weight: 700; text-transform: uppercase; overflow-wrap: anywhere; }
 .unit-preview { display: flex; align-items: center; gap: 12px; padding: 14px; margin: 14px 0; background: #edf1e8; border-radius: 8px; }
 .unit-preview .map-unit-icon { --badge-scale: 0.65; color: #314455; }
 .unit-list-mark { font-size: 23px; width: 35px; text-align: center; color: #314455; }
+.unit-list-mark img { display: block; width: 35px; height: 35px; object-fit: contain; }
+.symbol-option-art img { width: 34px; height: 28px; object-fit: contain; }
 .badge-selected {
   border-color: #e9b46d;
   box-shadow:

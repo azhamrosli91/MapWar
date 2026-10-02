@@ -2,14 +2,15 @@ import { AlertCircle, Check, Copy, Crosshair, ImagePlus, Trash2, Upload, X } fro
 import RouteEditor from "./RouteEditor.jsx";
 import SizePicker from "./SizePicker.jsx";
 import VisibilityEditor from "./VisibilityEditor.jsx";
-import { UNIT_KINDS, BADGE_SYMBOLS, unitKindLabel } from "./badge.js";
+import { UNIT_KINDS, UNIT_IMAGES, BADGE_SYMBOLS, unitKindLabel, unitImage } from "./badge.js";
 import { coordinates } from "./data.js";
 
 export default function UnitEditor({ unit, editing, onChange, onImage, onSave, onCancel, onDelete, onClone, onPlace, onMode, onFocus, onPickTargetLocation, targetLocationStopId, onPickRouteLocation, routeLocationStopId, mode, mapReady, uploading, error, effectTargets }) {
   const symbol = BADGE_SYMBOLS.find((item) => item.value === (unit.kind === "troop" ? "person" : unit.kind === "other" ? "helmet" : unit.kind));
+  const imageSource = unitImage(unit);
   return <form className="editor" onSubmit={onSave}>
     <div className="editor-title"><h3>{editing ? "Edit equipment" : "New equipment"}</h3><button type="button" className="icon-button" aria-label="Close editor" onClick={onCancel}><X size={18} /></button></div>
-    <div className="unit-preview"><div className={`map-unit-icon${unit.kind === "other" && unit.image ? " is-image" : ""}`} style={{ color: unit.color ?? "#ffffff" }}>{unit.kind === "other" && unit.image ? <img src={unit.image} alt="Custom equipment" /> : <svg viewBox={symbol.viewBox}>{symbol.paths.map((path) => <path key={path.d} fill="currentColor" fillRule={path.fillRule} d={path.d} />)}</svg>}</div><strong>{unit.name || "New equipment"}</strong></div>
+    <div className="unit-preview"><div className={`map-unit-icon${imageSource ? unit.kind === "other" ? " is-image" : " is-preset-image" : ""}`} style={{ color: unit.color ?? "#ffffff" }}>{imageSource ? <img src={imageSource} alt={unitKindLabel(unit.kind)} /> : <svg viewBox={symbol.viewBox}>{symbol.paths.map((path) => <path key={path.d} fill="currentColor" fillRule={path.fillRule} d={path.d} />)}</svg>}</div><strong>{unit.name || "New equipment"}</strong></div>
     <label className="field-label">Name<input value={unit.name} onChange={(event) => onChange({ name: event.target.value })} maxLength={80} placeholder="e.g. 2nd Tank Regiment" required /></label>
     {editing && <button type="button" className="badge-settings-reset" onClick={onClone} disabled={uploading} title="Create a copy of this equipment"><Copy size={14} /> <span>Clone equipment</span></button>}
     <fieldset className="symbol-field">
@@ -20,7 +21,7 @@ export default function UnitEditor({ unit, editing, onChange, onImage, onSave, o
           return <label className={`symbol-option ${unit.kind === kind ? "active" : ""}`} key={kind}>
             <input type="radio" name="unit-symbol" value={kind} checked={unit.kind === kind} onChange={() => onChange({ kind })} />
             <span className="symbol-option-art" aria-hidden="true">
-              {option?.paths.length ? <svg viewBox={option.viewBox}>{option.paths.map((path) => <path key={path.d} fill="currentColor" fillRule={path.fillRule} d={path.d} />)}</svg> : <ImagePlus size={25} />}
+              {UNIT_IMAGES[kind] ? <img src={UNIT_IMAGES[kind]} alt="" /> : option?.paths.length ? <svg viewBox={option.viewBox}>{option.paths.map((path) => <path key={path.d} fill="currentColor" fillRule={path.fillRule} d={path.d} />)}</svg> : <ImagePlus size={25} />}
             </span>
             <span className="symbol-option-label">{unitKindLabel(kind)}</span>
           </label>;
@@ -29,8 +30,8 @@ export default function UnitEditor({ unit, editing, onChange, onImage, onSave, o
     </fieldset>
     <label className="upload-zone" htmlFor="unit-image"><ImagePlus size={22} /><span><strong>{unit.image ? "Change equipment image" : "Use a custom equipment image"}</strong><small>PNG, JPG or WebP · up to 5 MB</small></span><Upload size={15} /><input id="unit-image" type="file" accept="image/png,image/jpeg,image/webp" disabled={uploading} onChange={onImage} /></label>
     {unit.image && <button type="button" className="secondary" onClick={() => onChange({ image: "", ...(unit.kind === "other" ? { kind: "tank" } : {}) })}>Remove custom image</button>}
-    {unit.kind !== "other" && <label className="field-label paint-color">Equipment color<input type="color" value={unit.color ?? "#ffffff"} onChange={(event) => onChange({ color: event.target.value })} /></label>}
-    <p className="field-hint">Built-in equipment icons have no background. Uploaded images are cropped to a circle.</p>
+    {!imageSource && unit.kind !== "other" && <label className="field-label paint-color">Equipment color<input type="color" value={unit.color ?? "#ffffff"} onChange={(event) => onChange({ color: event.target.value })} /></label>}
+    <p className="field-hint">Preset equipment images are shown in full. Custom uploads are cropped to a circle.</p>
     <SizePicker value={unit.size} onChange={(size) => onChange({ size })} />
     <div className="section-rule" />
     <div className="field-label location-title">Position <span>{coordinates(unit.lat, unit.lng) ? "LOCATION SET" : "CHOOSE A SPOT"}</span></div>

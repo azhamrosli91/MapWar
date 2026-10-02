@@ -42,7 +42,7 @@ import usePlayback from "./usePlayback.js";
 import { videoDate, videoFrameSize } from "./video.js";
 import { BADGE_SIZES, MAX_LINES, MAX_LINE_POINTS, MAX_STOPS, createRouteStop, routeError, timelineRange, visibilityError } from "./timeline.js";
 import { HAS_MAP_KEY } from "./maps-config.js";
-import { BADGE_SYMBOLS, DEFAULT_BADGE_SYMBOL, UNIT_KINDS } from "./badge.js";
+import { BADGE_SYMBOLS, DEFAULT_BADGE_SYMBOL, UNIT_KINDS, unitImage } from "./badge.js";
 import { MAX_PAINT_POINTS, MAX_PAINT_STROKES } from "./paint.js";
 import {
   checkProjectSize,
@@ -1148,7 +1148,7 @@ export default function App() {
               <p className="intro-copy">Place tanks, warships, artillery, troops, and custom equipment images. Give each one a route through time.</p>
               <button className="primary add-button" disabled={!ready} onClick={addUnit}><Plus size={18} /> Add equipment</button>
               <div className="list-heading"><span>MAP EQUIPMENT</span><span>{project.units.length} / {MAX_UNITS}</span></div>
-              {!project.units.length ? <p className="field-hint">Add equipment, choose its location, then create a movement route.</p> : <ul className="badge-list">{project.units.map((unit) => <li key={unit.id}><button className={`badge-row ${selectedId === unit.id ? "active" : ""}`} onClick={() => selectUnit(unit.id)}><span className="unit-list-mark">{unit.kind === "other" ? "✦" : unit.kind === "warship" ? "◢" : unit.kind === "tank" ? "▰" : unit.kind === "artillery" ? "✹" : "●"}</span><div className="badge-row-copy"><strong>{unit.name}</strong><span>{unit.kind} · {unit.lat.toFixed(4)}, {unit.lng.toFixed(4)}</span></div><ChevronRight size={15} /></button></li>)}</ul>}
+              {!project.units.length ? <p className="field-hint">Add equipment, choose its location, then create a movement route.</p> : <ul className="badge-list">{project.units.map((unit) => <li key={unit.id}><button className={`badge-row ${selectedId === unit.id ? "active" : ""}`} onClick={() => selectUnit(unit.id)}><span className="unit-list-mark">{unitImage(unit) ? <img src={unitImage(unit)} alt="" /> : unit.kind === "other" ? "✦" : unit.kind === "warship" ? "◢" : unit.kind === "artillery" ? "✹" : "●"}</span><div className="badge-row-copy"><strong>{unit.name}</strong><span>{unit.kind} · {unit.lat.toFixed(4)}, {unit.lng.toFixed(4)}</span></div><ChevronRight size={15} /></button></li>)}</ul>}
             </> : !draft ? (
               <>
                 <p className="intro-copy">

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronDown, Flag } from "lucide-react";
-import { BADGE_SYMBOLS } from "./badge.js";
+import { BADGE_SYMBOLS, unitImage } from "./badge.js";
 
 function targetInfo(target) {
   const isBadge = target.label != null;
@@ -11,13 +11,12 @@ function targetInfo(target) {
       : target.kind === "other"
         ? "helmet"
         : target.kind;
-  const usesCustomImage = isBadge ? symbolValue === "custom" : target.kind === "other";
 
   return {
     isBadge,
     name: target.label || target.name || "Unnamed target",
     symbol: BADGE_SYMBOLS.find((item) => item.value === symbolValue),
-    image: usesCustomImage ? (isBadge ? target.symbolImage : target.image) : "",
+    image: isBadge ? (symbolValue === "custom" ? target.symbolImage : "") : unitImage(target),
   };
 }
 

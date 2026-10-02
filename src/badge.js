@@ -1,3 +1,24 @@
+import tankImage from "./assets/equipment/tank.png";
+import boatImage from "./assets/equipment/boat.png";
+import artilleryImage from "./assets/equipment/artillery.png";
+import warshipImage from "./assets/equipment/warship.png";
+import multipleUsersImage from "./assets/equipment/multiple-users.png";
+import troopImage from "./assets/equipment/troop.png";
+import helmetImage from "./assets/equipment/helmet.png";
+import gunImage from "./assets/equipment/gun.png";
+import fortressImage from "./assets/equipment/fortress.png";
+import submarineImage from "./assets/equipment/submarine.png";
+import aircraftImage from "./assets/equipment/aircraft.png";
+import helicopterImage from "./assets/equipment/helicopter.png";
+import ammunitionImage from "./assets/equipment/ammunition.png";
+import militaryTruckImage from "./assets/equipment/military-truck.png";
+
+export const UNIT_IMAGES = { tank: tankImage, boat: boatImage, artillery: artilleryImage, warship: warshipImage, "multiple-users": multipleUsersImage, troop: troopImage, helmet: helmetImage, gun: gunImage, fortress: fortressImage, submarine: submarineImage, aircraft: aircraftImage, helicopter: helicopterImage, ammunition: ammunitionImage, "military-truck": militaryTruckImage };
+
+export function unitImage(unit) {
+  return unit.kind === "other" ? unit.image || "" : UNIT_IMAGES[unit.kind] || "";
+}
+
 export const BADGE_SYMBOLS = [
   { value: "none", label: "None", viewBox: "0 0 60 44", paths: [] },
   {
@@ -200,11 +221,12 @@ export function unitElement(unit, selected = false, draft = false) {
   const box = document.createElement("div");
   box.className = `map-unit${selected ? " badge-selected" : ""}${draft ? " badge-draft" : ""}`;
   const icon = document.createElement("div");
-  icon.className = `map-unit-icon${unit.kind === "other" && unit.image ? " is-image" : ""}`;
+  const imageSource = unitImage(unit);
+  icon.className = `map-unit-icon${imageSource ? unit.kind === "other" ? " is-image" : " is-preset-image" : ""}`;
   icon.style.color = unit.color ?? "#ffffff";
-  if (unit.kind === "other" && unit.image) {
+  if (imageSource) {
     const image = document.createElement("img");
-    image.src = unit.image;
+    image.src = imageSource;
     image.alt = "";
     image.draggable = false;
     icon.append(image);
