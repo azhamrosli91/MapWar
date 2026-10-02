@@ -1,0 +1,11 @@
+.git
+node_modules
+dist
+.vite
+.env*
+*.local
+*.log
+logs
+.idea
+.vscode
+scenarios

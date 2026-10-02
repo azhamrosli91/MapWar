@@ -16,8 +16,11 @@ const outputDir = join(tmpdir(), `malaya-world-war-ii-video-${process.pid}`);
 mkdirSync(outputDir, { recursive: true });
 const dev = process.argv.includes("--dev");
 const portIndex = process.argv.indexOf("--port");
-const port = portIndex >= 0 ? Number(process.argv[portIndex + 1]) : dev ? 5181 : 4173;
+const port = portIndex >= 0 ? Number(process.argv[portIndex + 1]) : Number(process.env.PORT || (dev ? 5181 : 4173));
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Choose a valid port.");
+const host = process.env.HOST || "127.0.0.1";
+const allowedHosts = new Set(["127.0.0.1", "localhost", ...(process.env.ALLOWED_HOSTS || "").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean)]);
+const renderOrigin = new URL(process.env.RENDER_ORIGIN || `http://127.0.0.1:${port}`).origin;
 const jobs = new Map();
 const queue = [];
 let active = null;
@@ -97,7 +100,7 @@ async function captureMapImage(input) {
     const context = await browser.newContext({ viewport: input.logicalSize, deviceScaleFactor: input.scale });
     const page = await context.newPage();
     page.setDefaultTimeout(30000);
-    await page.goto(`http://127.0.0.1:${port}/render.html`, { waitUntil: "domcontentloaded" });
+    await page.goto(`${renderOrigin}/render.html`, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => !!window.fieldmarkRender);
     await page.evaluate((value) => window.fieldmarkRender.load(value), input);
     await page.waitForFunction(() => window.fieldmarkRender?.ready || window.fieldmarkRender?.status === "error", { timeout: 30000 });
@@ -119,7 +122,7 @@ async function render(job) {
   const scale = format.width / input.logicalSize.width;
   const range = timelineRange([...input.project.badges, ...input.project.units]);
   const frames = input.duration * 30;
-  const origin = `http://127.0.0.1:${port}`;
+  const origin = renderOrigin;
   let browser;
   let encoder;
   try {
@@ -185,7 +188,12 @@ function schedule() {
 }
 
 async function handleApi(req, res, path) {
-  if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host) return reply(res, 403, { error: "Only this local app can start a render." });
+  if (req.headers.origin) {
+    let origin;
+    try { origin = new URL(req.headers.origin); }
+    catch { return reply(res, 403, { error: "Invalid request origin." }); }
+    if (origin.host !== req.headers.host) return reply(res, 403, { error: "Only this app can start a render." });
+  }
   if (path === "/api/map/image" && req.method === "POST") {
     if (active || queue.length || imageCaptureActive) return reply(res, 429, { error: "Wait for the current export to finish before downloading a picture." });
     let input;
@@ -244,8 +252,15 @@ async function handleApi(req, res, path) {
 const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon" };
 const server = createServer(async (req, res) => {
   try {
-    if (!/[\s\/]/.test(req.headers.host ?? "") && (req.headers.host?.startsWith("127.0.0.1:") || req.headers.host?.startsWith("localhost:"))) {
-      const path = new URL(req.url, `http://${req.headers.host}`).pathname;
+    const requestHost = req.headers.host ?? "";
+    let hostname;
+    if (requestHost && !/[\s\/\\@?#]/.test(requestHost)) {
+      try { hostname = new URL(`http://${requestHost}`).hostname; }
+      catch { /* Invalid Host headers are rejected below. */ }
+    }
+    if (allowedHosts.has(hostname)) {
+      const path = new URL(req.url, `http://${requestHost}`).pathname;
+      if (path === "/healthz" && req.method === "GET") return reply(res, 200, { status: "ok" });
       if (path.startsWith("/api/")) return await handleApi(req, res, path);
       if (dev) return vite.middlewares(req, res, () => reply(res, 404, { error: "Page not found." }));
       let file = resolve(root, "dist", `.${decodeURIComponent(path)}`);
@@ -255,7 +270,7 @@ const server = createServer(async (req, res) => {
       createReadStream(file).pipe(res);
       return;
     }
-    return reply(res, 403, { error: "Use this app on localhost." });
+    return reply(res, 403, { error: "This hostname is not allowed." });
   } catch (error) {
     if (!res.headersSent) reply(res, 500, { error: error.message || "Server error." });
   }
@@ -265,7 +280,7 @@ if (dev) {
   const { createServer: createViteServer } = await import("vite");
   vite = await createViteServer({ root, server: { middlewareMode: true, hmr: { server } }, appType: "spa" });
 }
-server.listen(port, "127.0.0.1", () => console.log(`Malaya World War II with video export: http://127.0.0.1:${port}`));
+server.listen(port, host, () => console.log(`Malaya World War II with video export: http://${host}:${port}`));
 setInterval(() => {
   for (const [id, job] of jobs) {
     if (job !== active && !queue.includes(job) && Date.now() - (job.finished ?? job.created) > 3600000) {

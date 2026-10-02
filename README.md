@@ -71,7 +71,7 @@ Dates and times share a scenario clock with minute precision, independent of the
 
 After saving a badge or symbol with a dated route or visibility change, choose **Export video**. Select landscape 16:9 or portrait 9:16. The shaded map area outside the frame is excluded from the video. Pan and zoom inside the frame to choose a fixed view; the Google logo and attribution remain inside it. **Show date** places the changing DD/MM/YYYY date in the video and starts enabled. Use **Preview** and the scrubber to check movement, then choose **Export MP4**.
 
-The local renderer creates a silent 30 fps H.264 video at 1920×1080 or 1080×1920. It displays progress, supports cancellation, and offers playback and download when finished. Rendering can take longer than the selected animation length. Completed files are available for one hour while the app is running. A single video renders at a time; up to two may wait. Closing an active export cancels it. The render service runs on this Windows PC at the same local address as Malaya World War II; the map project is not uploaded to another server. Keep Malaya World War II open until the MP4 is ready.
+The renderer creates a silent 30 fps H.264 video at 1920×1080 or 1080×1920. It displays progress, supports cancellation, and offers playback and download when finished. Rendering can take longer than the selected animation length. Completed files are available for one hour while the app is running. A single video renders at a time; up to two may wait. Closing an active export cancels it. When running locally, rendering stays on your computer. On the hosted website, PNG and MP4 exports send the map project to the Ubuntu server for rendering. Keep Malaya World War II open until the MP4 is ready. Restarting the service clears export jobs and makes previous downloads unavailable.
 
 ## Build and commands
 
@@ -81,7 +81,58 @@ npm run preview
 npm run lint
 ```
 
-The production website is generated in `dist/`. Serve that folder over HTTP or HTTPS; opening `index.html` directly using `file://` is not supported. Deployment is not included.
+The production website is generated in `dist/`. Run the Node service to serve that folder and retain PNG/MP4 exports; a static-only host cannot render exports. Opening `index.html` directly using `file://` is not supported.
+
+## Deploy on Ubuntu with Docker and Nginx
+
+The included setup targets **https://war2.pinangemas.com.my** on **76.13.181.222**, using the server's existing Nginx installation. The app runs as a non-root user in Docker, including Linux Chromium and FFmpeg. Port 4173 is published only on the server's loopback interface; Nginx handles public requests and TLS. If port 4173 is already occupied, change the host port in `compose.yaml` and the upstream port in `deploy/war2.nginx.conf` together.
+
+1. Set the DNS **A** record for `war2.pinangemas.com.my` to `76.13.181.222`. Remove any stale AAAA record unless IPv6 is configured on this server. Allow inbound TCP ports 80 and 443.
+2. Install Docker Engine and its Compose plugin following the [official Ubuntu instructions](https://docs.docker.com/engine/install/ubuntu/). Use the existing Nginx installation. You need sudo access to install the Nginx site and certificate.
+3. Copy this project, including your deployment changes and `package-lock.json`, to `/opt/mapwar` on the server. A fresh Git clone must include the deployment changes before continuing. Do not copy Windows `node_modules`, `dist`, or local credentials.
+4. Configure the Google Maps browser key for `https://war2.pinangemas.com.my/*` and restrict it to Maps JavaScript API. Create your own JavaScript map ID for production. The hosted renderer loads this same HTTPS address, so no localhost referrer needs to be added for hosted exports. The container must be able to reach the public domain over HTTPS and Google Maps over the internet.
+5. In the project folder on Ubuntu:
+
+```sh
+cd /opt/mapwar
+cp .env.example .env
+nano .env
+sudo docker compose up -d --build
+```
+
+Enter the actual `VITE_GOOGLE_MAPS_API_KEY` and `VITE_GOOGLE_MAPS_MAP_ID` in `.env`. These are browser settings embedded at build time; rebuild after changing them. `.env` is excluded from Git and the Docker build context. Compose passes the two browser settings explicitly as build arguments.
+
+6. Install this domain's Nginx site without replacing existing sites:
+
+```sh
+sudo cp deploy/war2.nginx.conf /etc/nginx/sites-available/war2.pinangemas.com.my
+sudo ln -s /etc/nginx/sites-available/war2.pinangemas.com.my /etc/nginx/sites-enabled/war2.pinangemas.com.my
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+If a site or symlink for this hostname already exists, merge the proxy settings into that site instead of installing a duplicate. The proxy preserves the hostname for the app's origin checks, permits 25 MB export requests, and allows up to five minutes of inactivity while a PNG renders.
+
+7. After DNS resolves to this server, obtain HTTPS using [Certbot's Nginx instructions](https://certbot.eff.org/instructions?ws=nginx&os=snap). If Certbot is already installed:
+
+```sh
+sudo certbot --nginx -d war2.pinangemas.com.my --redirect
+```
+
+Certbot adds the certificate configuration and HTTP-to-HTTPS redirect to this site's configuration. Retain the installed renewal timer. PNG/MP4 rendering becomes available once the public HTTPS address works.
+
+Useful operational commands:
+
+```sh
+sudo docker compose ps
+sudo docker compose logs --tail=100 app
+curl --fail http://127.0.0.1:4173/healthz
+curl --fail https://war2.pinangemas.com.my/healthz
+```
+
+For updates, copy/pull the new source and run `sudo docker compose up -d --build`. Browser maps remain in each user's browser; export JSON backups before changing hostname. Temporary generated videos live in the container and expire after an hour. Rendering capacity is shared by all visitors.
+
+Server settings: `HOST` controls the listening interface (defaults to `127.0.0.1` locally); `PORT` controls the port; `ALLOWED_HOSTS` adds comma-separated permitted hostnames; `RENDER_ORIGIN` selects the address Chromium loads (defaults to the local server). The Compose file configures these for the public domain.
 
 ## Project structure
 
@@ -107,4 +158,4 @@ Version 5 JSON contains `version`, `view` (`center`, `zoom`, `mapTypeId`), `badg
 
 Versions 1–4 remain supported. Older maps load with visibility always on; versions before 4 also get zero stars, no custom symbol image, and Normal effects. Version 1 helmet settings are preserved. One map supports up to 500 badges, 500 movable symbols, and 24 MB of normalized map data, keeping exports within the 25 MB import limit. Imports validate coordinates, dates, chronological order, sizes, visibility windows, and unique identifiers. Imported labels and names are rendered as plain text.
 
-Internet access is required for Google Maps. Interface fonts load from Google Fonts with local fallbacks. Uploaded flag images remain in your browser unless you export and share them; the app does not upload them to a backend. Maps requests are made to Google.
+Internet access is required for Google Maps. Interface fonts load from Google Fonts with local fallbacks. Uploaded flag images remain in your browser during editing. PNG and MP4 exports send project data and images to the app's rendering service; on the hosted website this runs on the Ubuntu server. Maps requests are made to Google.

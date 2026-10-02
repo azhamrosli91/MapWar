@@ -1,0 +1,31 @@
+name: mapwar
+
+services:
+  app:
+    build:
+      context: .
+      args:
+        VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY:?Set VITE_GOOGLE_MAPS_API_KEY in .env}
+        VITE_GOOGLE_MAPS_MAP_ID: ${VITE_GOOGLE_MAPS_MAP_ID:-DEMO_MAP_ID}
+    restart: unless-stopped
+    init: true
+    shm_size: 1gb
+    environment:
+      HOST: 0.0.0.0
+      PORT: "4173"
+      ALLOWED_HOSTS: war2.pinangemas.com.my
+      RENDER_ORIGIN: https://war2.pinangemas.com.my
+    ports:
+      - "127.0.0.1:4173:4173"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4173/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
