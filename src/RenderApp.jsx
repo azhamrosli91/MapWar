@@ -17,7 +17,7 @@ export default function RenderApp() {
       async load(input) {
         const project = await validateProject(input.project);
         const range = timelineRange([...project.badges, ...project.units]);
-        if (input.kind !== "image" && !range) throw new Error("This map has no dated route or visibility change.");
+        if (input.kind !== "image" && !input.recording && !range) throw new Error("This map has no dated route or visibility change.");
         const sources = [...project.badges.flatMap((badge) => [badge.flag, badge.symbolImage]), ...project.units.map((unit) => unit.image)].filter(Boolean);
         await Promise.all(sources.map(async (src) => { const image = new Image(); image.src = src; await image.decode(); }));
         ready.current = false;
@@ -32,6 +32,11 @@ export default function RenderApp() {
         if (dateRef.current) dateRef.current.textContent = videoDate(time);
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       },
+      async frame(frame) {
+        if (!ready.current || !mapRef.current) throw new Error("The map is not ready for a frame.");
+        await mapRef.current.renderFrame(frame.view, frame.previewTime);
+        if (dateRef.current) dateRef.current.textContent = videoDate(frame.previewTime);
+      },
     };
     return () => { delete window.fieldmarkRender; };
   }, []);
@@ -41,10 +46,10 @@ export default function RenderApp() {
   if (!snapshot) return null;
   const range = timelineRange([...snapshot.project.badges, ...snapshot.project.units]);
   const imageExport = snapshot.kind === "image";
-  const previewTime = imageExport ? snapshot.previewTime : range.start;
-  const preview = !imageExport || Number.isFinite(snapshot.previewTime);
+  const previewTime = imageExport ? snapshot.previewTime : snapshot.recording ? snapshot.recording.initialFrame.previewTime : range.start;
+  const preview = Number.isFinite(previewTime);
   return <div id="render-surface" className="render-surface">
-    <MapCanvas ref={mapRef} initialView={snapshot.view} badges={snapshot.project.badges} units={snapshot.project.units} draft={null} selectedId={null} mode="export" preview={preview} previewTime={previewTime} animationRange={range} animationDuration={snapshot.duration ?? snapshot.project.playbackDuration} lines={snapshot.project.lines} paintStrokes={snapshot.project.paintStrokes} lineDraft={null} renderMode onStatus={setMapStatus} onView={() => {}} />
-    {!imageExport && snapshot.showDate && <time ref={dateRef} className="video-date-stamp">{videoDate(range.start)}</time>}
+    <MapCanvas ref={mapRef} initialView={snapshot.recording?.initialFrame.view ?? snapshot.view} referenceZoom={snapshot.recording?.referenceZoom} badges={snapshot.project.badges} units={snapshot.project.units} draft={null} selectedId={null} mode="export" preview={preview} previewTime={previewTime} animationRange={range} animationDuration={snapshot.duration ?? snapshot.project.playbackDuration} lines={snapshot.project.lines} paintStrokes={snapshot.project.paintStrokes} lineDraft={null} renderMode onStatus={setMapStatus} onView={() => {}} />
+    {!imageExport && snapshot.showDate && range && <time ref={dateRef} className="video-date-stamp">{videoDate(previewTime)}</time>}
   </div>;
 }

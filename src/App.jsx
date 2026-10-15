@@ -17,6 +17,7 @@ import {
   Layers2,
   LoaderCircle,
   MapPin,
+  Menu,
   Maximize2,
   Minimize2,
   PanelLeftClose,
@@ -38,7 +39,10 @@ import VisibilityEditor from "./VisibilityEditor.jsx";
 import SizePicker from "./SizePicker.jsx";
 import Timeline from "./Timeline.jsx";
 import VideoExportPanel from "./VideoExportPanel.jsx";
+import VideoExportNotifications from "./VideoExportNotifications.jsx";
+import PictureExportPanel from "./PictureExportPanel.jsx";
 import usePlayback from "./usePlayback.js";
+import useVideoJobs from "./useVideoJobs.js";
 import { videoDate, videoFrameSize } from "./video.js";
 import { BADGE_SIZES, MAX_LINES, MAX_LINE_POINTS, MAX_STOPS, createRouteStop, routeError, timelineRange, visibilityError } from "./timeline.js";
 import { HAS_MAP_KEY } from "./maps-config.js";
@@ -200,15 +204,20 @@ export default function App() {
   const [mapStatus, setMapStatus] = useState(
     HAS_MAP_KEY ? "loading" : "missing",
   );
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(() => !window.matchMedia("(max-width: 700px)").matches);
+  const actionsDialogRef = useRef(null);
   const [mapFullscreen, setMapFullscreen] = useState(false);
   const [timelineMinimized, setTimelineMinimized] = useState(true);
-  const [videoOpen, setVideoOpen] = useState(false);
+  const [exportKind, setExportKind] = useState(null);
+  const exportOpen = exportKind !== null;
+  const videoOpen = exportKind === "video";
+  const pictureOpen = exportKind === "image";
+  const [pictureError, setPictureError] = useState("");
   const [pictureExporting, setPictureExporting] = useState(false);
-  const [videoOrientation, setVideoOrientation] = useState("landscape");
+  const [exportOrientation, setExportOrientation] = useState("landscape");
   const [videoShowDate, setVideoShowDate] = useState(true);
-  const [videoFrame, setVideoFrame] = useState(null);
-  const [videoCamera, setVideoCamera] = useState(null);
+  const [exportFrame, setExportFrame] = useState(null);
+  const [exportCamera, setExportCamera] = useState(null);
   const [draft, setDraft] = useState(null);
   const [unitDraft, setUnitDraft] = useState(null);
   const [dirty, setDirty] = useState(false);
@@ -232,6 +241,7 @@ export default function App() {
   const uploadSequence = useRef(0);
   const range = useMemo(() => timelineRange([...project.badges, ...project.units]), [project.badges, project.units]);
   const playback = usePlayback(mapRef, range, project.playbackDuration);
+  const videoJobs = useVideoJobs();
 
   function updateMapFileName(filename) {
     setMapFileName(filename);
@@ -253,13 +263,13 @@ export default function App() {
   }, [mapFullscreen]);
 
   useEffect(() => {
-    if (!videoOpen || !mapStageRef.current) return;
+    if (!exportOpen || !mapStageRef.current) return;
     const observer = new ResizeObserver(([entry]) => {
-      setVideoFrame(videoFrameSize(entry.contentRect.width, entry.contentRect.height, videoOrientation));
+      setExportFrame(videoFrameSize(entry.contentRect.width, entry.contentRect.height, exportOrientation));
     });
     observer.observe(mapStageRef.current);
     return () => observer.disconnect();
-  }, [videoOpen, videoOrientation]);
+  }, [exportOpen, exportOrientation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -417,6 +427,10 @@ export default function App() {
 
   function moveBadge(id, position) {
     if (playback.preview) return;
+    if (draft?.id === id) {
+      if (!draft.route.length) updateDraft(position);
+      return;
+    }
     setProject((current) => ({
       ...current,
       badges: current.badges.map((badge) =>
@@ -471,6 +485,10 @@ export default function App() {
 
   function moveUnit(id, position) {
     if (playback.preview) return;
+    if (unitDraft?.id === id) {
+      if (!unitDraft.route.length) updateUnit(position);
+      return;
+    }
     setProject((current) => ({ ...current, units: current.units.map((unit) => unit.id === id && !unit.route.length ? { ...unit, ...position } : unit) }));
   }
 
@@ -507,7 +525,7 @@ export default function App() {
   }
 
   function changeView(view) {
-    if (videoOpen) { setVideoCamera(view); return; }
+    if (exportOpen) { setExportCamera(view); return; }
     if (playback.preview) return;
     setProject((current) =>
       JSON.stringify(current.view) === JSON.stringify(view)
@@ -762,15 +780,14 @@ export default function App() {
   }
 
   async function downloadPicture() {
-    const stage = mapStageRef.current;
     const view = mapRef.current?.getView();
-    if (!stage || !view || pictureExporting) return;
+    if (!pictureOpen || !view || pictureExporting || mapStatus !== "ready") return;
+    setPictureError("");
     setPictureExporting(true);
     try {
       checkProjectSize(project);
-      const bounds = stage.getBoundingClientRect();
-      const logicalSize = { width: Math.floor(bounds.width), height: Math.floor(bounds.height) };
-      if (logicalSize.width < 90 || logicalSize.height < 90) throw new Error("Make the map area larger before downloading a picture.");
+      const logicalSize = exportFrame;
+      if (!logicalSize || logicalSize.width < 90 || logicalSize.height < 90) throw new Error("Make the map area larger before downloading a picture.");
       const scale = Math.max(0.5, Math.floor(Math.min(2, 4096 / logicalSize.width, 4096 / logicalSize.height, Math.sqrt(16_000_000 / (logicalSize.width * logicalSize.height))) * 100) / 100);
       const response = await fetch("/api/map/image", {
         method: "POST",
@@ -784,14 +801,14 @@ export default function App() {
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
       link.href = url;
-      link.download = `malaya-world-war-ii-map-${new Date().toISOString().slice(0, 10)}.png`;
+      link.download = `malaya-world-war-ii-map-${exportOrientation}-${new Date().toISOString().slice(0, 10)}.png`;
       document.body.append(link);
       link.click();
       link.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       setMessage({ text: "Map picture downloaded." });
     } catch (error) {
-      setMessage({ error: true, text: error.message || "The map picture could not be created." });
+      setPictureError(error.message || "The map picture could not be created.");
     } finally {
       setPictureExporting(false);
     }
@@ -940,53 +957,129 @@ export default function App() {
     action();
   }
 
-  function openVideoExport() {
-    if (!range || mapStatus !== "ready" || !discardAllowed()) return;
+  function openExport(kind) {
+    if (exportOpen || mapStatus !== "ready" || !discardAllowed()) return;
     const view = mapRef.current?.getView();
     if (!view) return;
     editingView.current = view;
-    setVideoCamera(view);
-    playback.edit();
+    setExportCamera(view);
+    setMapStatus("loading");
+    setMapFullscreen(false);
+    if (kind === "video") playback.edit();
+    else playback.pause();
     resetEditor();
-    setVideoOrientation("landscape");
+    setExportOrientation("landscape");
     setVideoShowDate(true);
+    setPictureError("");
     setTimelineMinimized(true);
-    setVideoOpen(true);
+    setExportKind(kind);
     if (window.matchMedia("(max-width: 700px)").matches) setPanelOpen(false);
   }
 
-  function closeVideoExport() {
-    playback.edit();
-    setVideoOpen(false);
-    setVideoFrame(null);
-    setVideoCamera(null);
+  function closeExport() {
+    if (pictureExporting) return;
+    if (videoOpen) playback.edit();
+    setExportKind(null);
+    setExportFrame(null);
+    setExportCamera(null);
   }
 
-  function orientVideo(next) {
-    setVideoCamera(mapRef.current?.getView() ?? videoCamera);
-    setVideoOrientation(next);
+  function orientExport(next) {
+    setExportCamera(mapRef.current?.getView() ?? exportCamera);
+    setMapStatus("loading");
+    setExportOrientation(next);
   }
 
-  async function startVideoExport() {
-    if (!videoFrame?.width || Math.min(videoFrame.width, videoFrame.height) < 90 || !range) throw new Error("Make the window larger to prepare the video frame.");
+  function prepareVideoRecording() {
+    if (!exportFrame?.width || Math.min(exportFrame.width, exportFrame.height) < 90) throw new Error("Make the window larger to prepare the video frame.");
     const view = mapRef.current?.getView();
     if (!view) throw new Error("The map is not ready.");
-    playback.pause();
     checkProjectSize(project);
-    const response = await fetch("/api/video/jobs", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project, view, orientation: videoOrientation, showDate: videoShowDate, logicalSize: videoFrame, duration: project.playbackDuration }),
-    }).catch(() => { throw new Error("The local render service is unavailable. Start Malaya World War II with npm run dev."); });
-    const result = await response.json().catch(() => ({}));
-    if (response.status === 404) throw new Error("Start Malaya World War II with npm run dev to enable the local render service.");
-    if (!response.ok) throw new Error(result.error || "The render service could not start this export.");
-    return result;
+    return { project: structuredClone(project), view, orientation: exportOrientation, showDate: videoShowDate && !!range, logicalSize: { ...exportFrame }, duration: project.playbackDuration,
+      recording: { referenceZoom: mapRef.current.getReferenceZoom(), frames: [] } };
+  }
+
+  function captureVideoFrame() {
+    const view = mapRef.current?.getView();
+    if (!view) throw new Error("The map is no longer available. Your recording has been kept.");
+    return { view, previewTime: playback.getTime() };
+  }
+
+  function startVideoExport(take, notice = "") {
+    const input = take ?? prepareVideoRecording();
+    if (!take) {
+      if (!range) throw new Error("Add a dated route or use Start recording to record this map.");
+      delete input.recording;
+    }
+    videoJobs.start(input, mapFileName, notice);
+    closeExport();
   }
 
   const timeline = <Timeline range={range} duration={project.playbackDuration} onDuration={(playbackDuration) => setProject((current) => ({ ...current, playbackDuration }))} playback={playback} onRestart={() => beginPreview(playback.restart)} onSeek={(time) => beginPreview(() => { playback.pause(); playback.seek(time); })} disabled={mapStatus !== "ready"} minimized={timelineMinimized} onMinimizedChange={setTimelineMinimized} />;
 
+  const secondaryActions = (<>
+            <button
+              className="text-button header-timeline-button"
+              disabled={!ready || !range || exportOpen}
+              onClick={() => setTimelineMinimized((current) => !current)}
+              aria-label={timelineMinimized ? "Show historical timeline" : "Hide historical timeline"}
+              aria-expanded={!!range && !timelineMinimized}
+              aria-controls={range ? "historical-timeline" : undefined}
+              title={timelineMinimized ? "Show historical timeline" : "Hide historical timeline"}
+            >
+              <Clock3 size={18} />
+              <span>Historical timeline</span>
+            </button>
+            <button
+              className="text-button header-reset-button"
+              disabled={!ready || !range || mapStatus !== "ready" || exportOpen}
+              onClick={() => beginPreview(playback.restart)}
+              aria-label="Reset animation to first date"
+              title="Reset animation to first date"
+            >
+              <RotateCcw size={18} />
+              <span>Reset</span>
+            </button>
+            <button
+              className="new-map-button"
+              disabled={!ready || importing || playback.preview || exportOpen}
+              onClick={createNewMap}
+              title="Start a new map"
+            >
+              <Plus size={16} />
+              <span>New</span>
+            </button>
+            <button
+              className="text-button"
+              disabled={!ready || importing || playback.preview || exportOpen}
+              onClick={() => importRef.current.click()}
+            >
+              {importing ? (
+                <LoaderCircle size={16} className="spin" />
+              ) : (
+                <Upload size={16} />
+              )}
+              <span>Import</span>
+            </button>
+            <button
+              className="export-button"
+              disabled={!ready}
+              onClick={downloadMap}
+            >
+              <Download size={16} />
+              <span>Export map</span>
+            </button>
+            <button className="export-button" disabled={!ready || mapStatus !== "ready" || exportOpen} onClick={() => openExport("video")}><Film size={16} /><span>Export video</span></button>
+  </>);
+
   return (
       <div className={`app${mapFullscreen ? " map-fullscreen" : ""}`}>
+      <dialog ref={actionsDialogRef} id="mobile-map-actions" className="mobile-actions-dialog" aria-labelledby="mobile-actions-title" onClick={(event) => { if (event.target === event.currentTarget || event.target.closest("button:not(:disabled)")) event.currentTarget.close(); }}>
+        <div className="mobile-actions-panel">
+          <div className="mobile-actions-heading"><h2 id="mobile-actions-title">Map actions</h2><button className="icon-button" aria-label="Close map actions" onClick={() => actionsDialogRef.current?.close()}><X size={20} /></button></div>
+          <div className="mobile-actions-list">{secondaryActions}</div>
+        </div>
+      </dialog>
       <header className="app-header">
         <div className="topbar">
           <a
@@ -1017,30 +1110,8 @@ export default function App() {
           <span className="workspace-tag">PERSONAL WORKSPACE</span>
           <div className="header-actions">
             <button
-              className="text-button header-timeline-button"
-              disabled={!ready || !range}
-              onClick={() => setTimelineMinimized((current) => !current)}
-              aria-label={timelineMinimized ? "Show historical timeline" : "Hide historical timeline"}
-              aria-expanded={!!range && !timelineMinimized}
-              aria-controls={range ? "historical-timeline" : undefined}
-              title={timelineMinimized ? "Show historical timeline" : "Hide historical timeline"}
-            >
-              <Clock3 size={18} />
-              <span>Historical timeline</span>
-            </button>
-            <button
-              className="text-button header-reset-button"
-              disabled={!ready || !range || mapStatus !== "ready"}
-              onClick={() => beginPreview(playback.restart)}
-              aria-label="Reset animation to first date"
-              title="Reset animation to first date"
-            >
-              <RotateCcw size={18} />
-              <span>Reset</span>
-            </button>
-            <button
               className="text-button header-play-button"
-              disabled={!ready || !range || mapStatus !== "ready"}
+              disabled={!ready || !range || mapStatus !== "ready" || exportOpen}
               onClick={playback.playing ? playback.pause : () => beginPreview(playback.play)}
               aria-label={playback.playing ? "Pause historical timeline" : "Play historical timeline"}
               title={range ? "Historical timeline" : "Add a movement route to enable playback"}
@@ -1050,6 +1121,7 @@ export default function App() {
             </button>
             <button
               className="text-button header-edit-button"
+              disabled={exportOpen}
               onClick={playback.edit}
               aria-label="Edit map"
               title="Edit map"
@@ -1057,36 +1129,8 @@ export default function App() {
               <Pencil size={18} />
               <span>Edit map</span>
             </button>
-            <button
-              className="new-map-button"
-              disabled={!ready || importing || playback.preview || videoOpen}
-              onClick={createNewMap}
-              title="Start a new map"
-            >
-              <Plus size={16} />
-              <span>New</span>
-            </button>
-            <button
-              className="text-button"
-              disabled={!ready || importing || playback.preview || videoOpen}
-              onClick={() => importRef.current.click()}
-            >
-              {importing ? (
-                <LoaderCircle size={16} className="spin" />
-              ) : (
-                <Upload size={16} />
-              )}
-              <span>Import</span>
-            </button>
-            <button
-              className="export-button"
-              disabled={!ready}
-              onClick={downloadMap}
-            >
-              <Download size={16} />
-              <span>Export map</span>
-            </button>
-            <button className="export-button" disabled={!ready || !range || mapStatus !== "ready"} onClick={openVideoExport}><Film size={16} /><span>Export video</span></button>
+            <div className="desktop-header-actions">{secondaryActions}</div>
+            <button className="text-button mobile-actions-button" aria-label="Open map actions" aria-haspopup="dialog" aria-controls="mobile-map-actions" onClick={() => actionsDialogRef.current?.showModal()}><Menu size={20} /><span>More</span></button>
             <input
               className="visually-hidden"
               ref={importRef}
@@ -1098,8 +1142,9 @@ export default function App() {
             />
           </div>
         </div>
-        {!mapFullscreen && !timelineMinimized && timeline}
-        {videoOpen && <VideoExportPanel orientation={videoOrientation} onOrientation={orientVideo} showDate={videoShowDate} onShowDate={setVideoShowDate} duration={project.playbackDuration} onDuration={(playbackDuration) => setProject((current) => ({ ...current, playbackDuration }))} playback={playback} range={range} onPlay={() => beginPreview(playback.play)} onRestart={() => beginPreview(playback.restart)} onSeek={(time) => beginPreview(() => { playback.pause(); playback.seek(time); })} onExport={startVideoExport} onClose={closeVideoExport} frameSize={videoFrame} />}
+        {!exportOpen && !mapFullscreen && !timelineMinimized && timeline}
+        {videoOpen && <VideoExportPanel orientation={exportOrientation} onOrientation={orientExport} showDate={videoShowDate} onShowDate={setVideoShowDate} duration={project.playbackDuration} onDuration={(playbackDuration) => setProject((current) => ({ ...current, playbackDuration }))} playback={playback} range={range} onPlay={() => beginPreview(playback.play)} onRestart={() => beginPreview(playback.restart)} onSeek={(time) => beginPreview(() => { playback.pause(); playback.seek(time); })} onPrepareRecording={prepareVideoRecording} onCaptureFrame={captureVideoFrame} onExport={startVideoExport} onClose={closeExport} frameSize={exportFrame} mapReady={mapStatus === "ready"} />}
+        {pictureOpen && <PictureExportPanel orientation={exportOrientation} onOrientation={orientExport} busy={pictureExporting} error={pictureError} mapReady={mapStatus === "ready"} frameSize={exportFrame} onDownload={downloadPicture} onClose={closeExport} />}
       </header>
 
       <main className={`workspace ${panelOpen ? "" : "panel-collapsed"}`}>
@@ -1126,7 +1171,7 @@ export default function App() {
             </button>
           </div>
           {playback.preview && <p className="sidebar-preview-note">Animation preview. Choose <strong>Edit map</strong> beside Play in the header to edit your features.</p>}
-          <div className="sidebar-content" inert={playback.preview || videoOpen}>
+          <div className="sidebar-content" inert={playback.preview || exportOpen}>
             <div className="sidebar-tabs" aria-label="Map features">{["badges", "units", "lines", "paint"].map((tab) => <button key={tab} className={section === tab ? "active" : ""} onClick={() => switchSection(tab)}>{tab === "badges" ? "Badges" : tab === "units" ? "Equipment" : tab === "paint" ? "Paint" : "Lines & text"} <span>{project[tab === "paint" ? "paintStrokes" : tab].length}</span></button>)}</div>
             {section === "paint" ? <div className="paint-controls">
               <p className="intro-copy">Drag on the map to color an area. Paint stays attached to the map as you zoom.</p>
@@ -1136,7 +1181,7 @@ export default function App() {
               <div className="paint-swatches" aria-label="Paint colors">{PAINT_COLORS.map(({ name, value }) => <button key={value} type="button" aria-label={name} aria-pressed={brush.color === value} className={brush.color === value ? "active" : ""} style={{ backgroundColor: value }} onClick={() => setBrush((current) => ({ ...current, color: value }))} />)}</div>
               <label className="paint-color">Color <input type="color" value={brush.color} onChange={(event) => setBrush((value) => ({ ...value, color: event.target.value }))} /></label>
               <label className="paint-opacity">Transparency <span>{Math.round(brush.opacity * 100)}% opacity</span><input type="range" min="10" max="100" step="5" value={Math.round(brush.opacity * 100)} onChange={(event) => setBrush((value) => ({ ...value, opacity: Number(event.target.value) / 100 }))} /></label>
-              <button className="primary add-button" disabled={mapStatus !== "ready" || playback.preview || videoOpen} onClick={() => { setMode(mode === "paint" ? "navigate" : "paint"); }}>{mode === "paint" ? "Done painting" : "Start painting"}</button>
+              <button className="primary add-button" disabled={mapStatus !== "ready" || playback.preview || exportOpen} onClick={() => { setMode(mode === "paint" ? "navigate" : "paint"); }}>{mode === "paint" ? "Done painting" : "Start painting"}</button>
               <div className="paint-options"><button disabled={!project.paintStrokes.length} onClick={() => setProject((current) => ({ ...current, paintStrokes: current.paintStrokes.slice(0, -1) }))}>Undo</button><button disabled={!project.paintStrokes.length} onClick={() => { if (window.confirm("Clear all paint from this map?")) setProject((current) => ({ ...current, paintStrokes: [] })); }}>Clear paint</button></div>
             </div> : lineDraft ? <LineEditor line={lineDraft} onChange={updateLine} mode={mode} onMode={changeMode} onSave={saveLine} onCancel={() => { if (discardAllowed()) resetEditor(); }} onDelete={project.lines.some((line) => line.id === lineDraft.id) ? deleteLine : null} selectedPoint={selectedPoint} onSelectedPoint={setSelectedPoint} error={formError} mapReady={mapStatus === "ready"} isSatellite={isSatellite} /> : section === "lines" ? <>
               <p className="intro-copy">Trace boundaries and paths. Lines appear red on Map and white on Satellite.</p>
@@ -1457,26 +1502,27 @@ export default function App() {
           </footer>
         </aside>
 
-        <section ref={mapStageRef} className={`map-stage ${range ? "has-timeline" : ""}${videoOpen ? " video-framing" : ""}`} aria-label="Map workspace">
+        <section ref={mapStageRef} className={`map-stage ${range ? "has-timeline" : ""}${exportOpen ? " video-framing" : ""}`} aria-label="Map workspace">
           <div className="map-placeholder" aria-hidden="true">
             <div className="globe-ring ring-one" />
             <div className="globe-ring ring-two" />
             <div className="globe-ring ring-three" />
             <span className="grid-label">A WORLD OF POSSIBILITIES</span>
           </div>
-          {ready && (!videoOpen || videoFrame?.width > 0) && (
-            <div className={videoOpen ? "video-frame" : "map-surface"} style={videoOpen ? { width: videoFrame.width, height: videoFrame.height } : undefined}>
+          {ready && (!exportOpen || exportFrame?.width > 0) && (
+            <div inert={pictureExporting} className={exportOpen ? "video-frame" : "map-surface"} style={exportOpen ? { width: exportFrame.width, height: exportFrame.height } : undefined}>
             <MapCanvas
-              key={videoOpen ? `video-${videoOrientation}` : "editor"}
+              key={exportOpen ? `${exportKind}-${exportOrientation}` : "editor"}
               ref={mapRef}
-              initialView={videoOpen ? videoCamera : editingView.current ?? initialView}
+              initialView={exportOpen ? exportCamera : editingView.current ?? initialView}
               badges={project.badges}
               units={project.units}
               draft={draft}
               unitDraft={unitDraft}
               targetLocationStopId={targetLocationStopId}
-              selectedId={selectedId}
-              mode={videoOpen ? "export" : mode}
+              selectedId={exportOpen ? null : selectedId}
+              cleanExport={exportOpen}
+              mode={exportOpen ? "export" : mode}
               preview={playback.preview}
               previewTime={playback.cursor}
               animationRange={range}
@@ -1502,10 +1548,10 @@ export default function App() {
               onView={changeView}
               onStatus={setMapStatus}
             />
-            {videoOpen && videoShowDate && <time className="video-date-stamp">{videoDate(playback.cursor)}</time>}
+            {videoOpen && videoShowDate && playback.preview && range && <time className="video-date-stamp">{videoDate(playback.cursor)}</time>}
             </div>
           )}
-          {!videoOpen && <div className="map-toolbar">
+          {!exportOpen && <div className="map-toolbar">
             {!panelOpen && !mapFullscreen && (
               <button
                 className="map-button panel-open-button"
@@ -1553,7 +1599,7 @@ export default function App() {
                 <RotateCcw size={15} style={{ transform: "scaleX(-1)" }} />
               </button>
             </div>
-            <button className="map-button image-export-toolbar-button" disabled={!ready || mapStatus !== "ready" || pictureExporting || videoOpen} onClick={downloadPicture} aria-label="Download map picture" title="Download map picture">
+            <button className="map-button image-export-toolbar-button" disabled={!ready || mapStatus !== "ready" || pictureExporting || exportOpen} onClick={() => openExport("image")} aria-label="Download map picture" title="Download map picture">
               {pictureExporting ? <LoaderCircle size={16} className="spin" /> : <ImageDown size={16} />}
               <span>{pictureExporting ? "Creating picture…" : "Download picture"}</span>
             </button>
@@ -1586,7 +1632,7 @@ export default function App() {
               </button>
             </div>
           )}
-          {(timelineMinimized || mapFullscreen) && !videoOpen && timeline}
+          {(timelineMinimized || mapFullscreen) && !exportOpen && timeline}
           <div className="map-bottom-note">
             <span className="compass-symbol">
               N<Compass size={22} strokeWidth={1.3} />
@@ -1599,6 +1645,7 @@ export default function App() {
           <div className="map-credit">MADE FOR YOUR POINT OF VIEW</div>
         </section>
       </main>
+      <div className="notification-stack">
       {message && (
         <div
           className={`toast ${message.error ? "toast-error" : ""}`}
@@ -1614,6 +1661,8 @@ export default function App() {
           </button>
         </div>
       )}
+      <VideoExportNotifications exports={videoJobs} />
+      </div>
     </div>
   );
 }

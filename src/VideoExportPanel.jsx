@@ -1,76 +1,79 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, Play, Pause, RotateCcw, X } from "lucide-react";
-import { VIDEO_FORMATS } from "./video.js";
+import { Play, Pause, RotateCcw, X } from "lucide-react";
+import ExportFrameOptions from "./ExportFrameOptions.jsx";
 import { formatScenarioTime } from "./timeline.js";
+import useVideoRecording from "./useVideoRecording.js";
 
-export default function VideoExportPanel({ orientation, onOrientation, showDate, onShowDate, duration, onDuration, playback, range, onPlay, onSeek, onRestart, onExport, onClose, frameSize }) {
-  const [job, setJob] = useState(null);
+export default function VideoExportPanel({ orientation, onOrientation, showDate, onShowDate, duration, onDuration, playback, range, onPlay, onSeek, onRestart, onPrepareRecording, onCaptureFrame, onExport, onClose, frameSize, mapReady }) {
   const [error, setError] = useState("");
-  const activeId = useRef(null);
-  const busy = job && ["queued", "rendering", "finishing"].includes(job.status);
+  const closed = useRef(false);
+  const submittingRef = useRef(false);
+  const preparingRef = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const busy = preparing || submitting;
+  const capture = useVideoRecording({ onPrepareRecording, onCaptureFrame, onStop: start, frameSize, mapReady });
+  const locked = !!busy || capture.recording;
+  const canCapture = mapReady && frameSize?.width && Math.min(frameSize.width, frameSize.height) >= 90;
 
   useEffect(() => {
-    if (!busy) return;
-    let stopped = false;
-    const id = setInterval(async () => {
-      try {
-        const response = await fetch(`/api/video/jobs/${job.id}`);
-        if (!response.ok) throw new Error("The render service stopped responding.");
-        const next = await response.json();
-        if (!stopped) {
-          setJob(next);
-          if (["completed", "failed", "cancelled"].includes(next.status)) activeId.current = null;
-          if (next.status === "failed") setError(next.error || "Video export failed.");
-        }
-      } catch (failure) {
-        if (!stopped) setError(failure.message);
-      }
-    }, 800);
-    return () => { stopped = true; clearInterval(id); };
-  }, [busy, job?.id]);
-
-  useEffect(() => () => {
-    if (activeId.current) fetch(`/api/video/jobs/${activeId.current}`, { method: "DELETE" }).catch(() => {});
+    closed.current = false;
+    return () => {
+      closed.current = true;
+    };
   }, []);
 
-  async function start() {
+  async function start(take, notice = "") {
+    if (closed.current || submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
     setError("");
-    setJob(null);
     try {
-      const next = await onExport();
-      activeId.current = next.id;
-      setJob(next);
-    } catch (failure) { setError(failure.message); }
+      await onExport(take, notice);
+    } catch (failure) { if (!closed.current) setError(failure.message); }
+    finally {
+      submittingRef.current = false;
+      if (!closed.current) setSubmitting(false);
+    }
   }
 
-  async function cancel() {
-    if (!job) return;
-    try {
-      await fetch(`/api/video/jobs/${job.id}`, { method: "DELETE" });
-      activeId.current = null;
-      setJob({ ...job, status: "cancelled" });
-    } catch { setError("Could not cancel the export."); }
+  async function beginRecording() {
+    if (preparingRef.current || closed.current) return;
+    preparingRef.current = true;
+    setPreparing(true);
+    setError("");
+    capture.clearMessages();
+    // Clear errors before measuring the new frame so the panel's own layout
+    // changes cannot accidentally stop the recording.
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (!closed.current) {
+      capture.start();
+      setPreparing(false);
+    }
+    preparingRef.current = false;
   }
 
   function close() {
-    if (busy) cancel();
+    closed.current = true;
+    capture.discard();
     onClose();
   }
 
-  const file = job?.status === "completed" ? `/api/video/jobs/${job.id}/file` : null;
   return <section className="video-export-panel" aria-label="Video export">
-    <div className="video-export-heading"><strong>Export video</strong><span>Pan and zoom inside the frame to choose the view.</span><button className="icon-button" onClick={close} aria-label="Close video export"><X size={17} /></button></div>
+    <div className="video-export-heading"><strong>Export video</strong><span>Record your map movements. Stop to render in the background and return to editing.</span><button className="icon-button" onClick={close} aria-label="Close video export"><X size={17} /></button></div>
     <div className="video-export-controls">
-      <fieldset className="video-orientations"><legend>Frame</legend>{Object.entries(VIDEO_FORMATS).map(([value, format]) => <label key={value}><input type="radio" name="video-orientation" value={value} checked={orientation === value} disabled={!!busy} onChange={() => onOrientation(value)} />{format.label}</label>)}</fieldset>
-      <label className="video-date-option"><input type="checkbox" checked={showDate} disabled={!!busy} onChange={(event) => onShowDate(event.target.checked)} /> Show date</label>
-      <label className="video-length">Length (sec)<input type="number" min="5" max="600" step="1" value={duration} disabled={!!busy} onChange={(event) => { const value = Number(event.target.value); if (Number.isInteger(value) && value >= 5 && value <= 600) onDuration(value); }} /></label>
-      <button className="secondary" onClick={playback.playing ? playback.pause : onPlay} disabled={!!busy} aria-label={playback.playing ? "Pause video preview" : "Play video preview"}>{playback.playing ? <Pause size={15} /> : <Play size={15} />} Preview</button>
-      <button className="icon-button" onClick={onRestart} disabled={!!busy} aria-label="Restart video preview"><RotateCcw size={17} /></button>
-      <button className="primary" onClick={start} disabled={!!busy || !frameSize?.width || Math.min(frameSize.width, frameSize.height) < 90}>Export MP4</button>
-      {busy && <button className="secondary" onClick={cancel}>Cancel export</button>}
+      <ExportFrameOptions orientation={orientation} onOrientation={onOrientation} disabled={locked} />
+      <label className="video-date-option"><input type="checkbox" checked={showDate && !!range} disabled={locked || !range} onChange={(event) => onShowDate(event.target.checked)} /> Show date</label>
+      <label className="video-length">Timeline length (sec)<input type="number" min="5" max="600" step="1" value={duration} disabled={locked || !range} onChange={(event) => { const value = Number(event.target.value); if (Number.isInteger(value) && value >= 5 && value <= 600) onDuration(value); }} /></label>
+      <button className="secondary" onClick={playback.playing ? playback.pause : onPlay} disabled={!!busy || !range || !mapReady} aria-label={playback.playing ? "Pause video preview" : "Play video preview"}>{playback.playing ? <Pause size={15} /> : <Play size={15} />} {playback.playing ? "Pause" : "Play"}</button>
+      <button className="icon-button" onClick={onRestart} disabled={!!busy || !range || !mapReady} aria-label="Restart video preview"><RotateCcw size={17} /></button>
+      <button className={`primary video-record-button${capture.recording ? " recording" : ""}`} onClick={() => capture.recording ? capture.stop() : beginRecording()} disabled={!!busy || (!capture.recording && !canCapture)}>{capture.recording ? "Stop recording" : "Start recording"}</button>
+      <button className="secondary" onClick={() => start()} disabled={locked || !canCapture || !range}>Export fixed-view MP4</button>
+      {capture.take && <button className="secondary" disabled={locked} onClick={() => start(capture.take)}>Render recording again</button>}
     </div>
-    <div className="video-export-scrubber"><span>{formatScenarioTime(playback.cursor)}</span><input type="range" aria-label="Video preview date and time" min={range.start} max={range.end} step="any" value={playback.cursor} disabled={!!busy} onChange={(event) => onSeek(Number(event.target.value))} /></div>
-    {job && <div className="video-job" role="status">{job.status === "rendering" ? `Rendering ${job.progress}%` : job.status === "queued" ? "Waiting to render…" : job.status === "finishing" ? "Finishing MP4…" : job.status === "completed" ? "MP4 is ready." : job.status === "cancelled" ? "Export cancelled." : "Export failed."}{file && <><a className="secondary" href={file} download><Download size={15} /> Download MP4</a><video src={file} controls preload="metadata" aria-label="Exported video" /></>}</div>}
+    <div className="video-recording-status" role="status">{capture.recording ? "Recording" : capture.take ? "Recorded" : "Ready to record"} · {Math.floor(capture.elapsed / 60).toString().padStart(2, "0")}:{Math.floor(capture.elapsed % 60).toString().padStart(2, "0")}{submitting && " · Sending video…"}{capture.notice && ` · ${capture.notice}`}</div>
+    {range && <div className="video-export-scrubber"><span>{formatScenarioTime(playback.cursor)}</span><input type="range" aria-label="Video preview date and time" min={range.start} max={range.end} step="any" value={playback.cursor} disabled={!!busy || !mapReady} onChange={(event) => onSeek(Number(event.target.value))} /></div>}
     {error && <p className="form-error" role="alert">{error}</p>}
+    {capture.error && <p className="form-error" role="alert">{capture.error}</p>}
   </section>;
 }

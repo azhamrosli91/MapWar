@@ -42,8 +42,10 @@ export default function usePlayback(mapRef, range, duration) {
     let previous = performance.now();
     let lastPaint = 0;
     function tick(now) {
-      const delta = now - previous;
-      previous = now;
+      // A first animation callback can carry a timestamp older than this
+      // effect's start when rendering was expensive. Never run time backwards.
+      const delta = Math.max(0, now - previous);
+      previous = Math.max(previous, now);
       clock.current = Math.min(end, (clock.current ?? start) + delta * (end - start) / (duration * 1000));
       mapRef.current?.previewAt(clock.current);
       if (now - lastPaint >= 80 || clock.current === end) {
@@ -73,5 +75,5 @@ export default function usePlayback(mapRef, range, duration) {
     setCursor(clock.current);
   }
 
-  return { preview, playing, cursor: cursor ?? start, play, pause, restart, seek, edit };
+  return { preview, playing, cursor: cursor ?? start, getTime: () => clock.current, play, pause, restart, seek, edit };
 }

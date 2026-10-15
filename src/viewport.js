@@ -54,6 +54,72 @@ export function boxIntersectsViewport(box, viewport, padding = 0) {
     && box.y - box.height / 2 - padding <= viewport.bottom;
 }
 
+export function declutterMarkers(entries, projection, viewport) {
+  if (!viewport) return;
+  const candidates = entries.filter((entry) => entry.visible && entry.inViewport).map((entry) => {
+    const box = projectedMarkerBox(entry, projection, viewport);
+    return box ? { entry, x: box.x, bottom: box.y + box.height / 2, baseScale: entry.displayScale } : null;
+  }).filter(Boolean);
+  const bounds = ({ entry, x, bottom }) => {
+    const width = entry.dimensions.width * entry.displayScale;
+    const height = entry.dimensions.height * entry.displayScale;
+    return { left: x - width / 2 - 3, right: x + width / 2 + 3, top: bottom - height - 3, bottom: bottom + 3 };
+  };
+  // Index screen rectangles so distant markers never need pairwise comparisons.
+  const createIndex = () => {
+    const cells = new Map();
+    const keys = (box) => {
+      const result = [];
+      for (let x = Math.floor(box.left / 128); x <= Math.floor(box.right / 128); x++) {
+        for (let y = Math.floor(box.top / 128); y <= Math.floor(box.bottom / 128); y++) result.push(`${x},${y}`);
+      }
+      return result;
+    };
+    return {
+      overlaps(box) {
+        const found = new Set();
+        for (const key of keys(box)) {
+          for (const item of cells.get(key) ?? []) {
+            if (box.left < item.box.right && box.right > item.box.left && box.top < item.box.bottom && box.bottom > item.box.top) found.add(item.candidate);
+          }
+        }
+        return found;
+      },
+      add(candidate, box) {
+        const item = { candidate, box };
+        for (const key of keys(box)) {
+          if (!cells.has(key)) cells.set(key, []);
+          cells.get(key).push(item);
+        }
+      },
+    };
+  };
+  // Try progressively smaller sizes before deciding which markers to hide.
+  for (const factor of [0.85, 0.7, 0.6, 0.5]) {
+    const index = createIndex();
+    const crowded = new Set();
+    for (const candidate of candidates) {
+      const box = bounds(candidate);
+      const overlaps = index.overlaps(box);
+      if (overlaps.size) {
+        crowded.add(candidate);
+        for (const other of overlaps) crowded.add(other);
+      }
+      index.add(candidate, box);
+    }
+    if (!crowded.size) break;
+    for (const candidate of crowded) candidate.entry.displayScale = candidate.baseScale * factor;
+  }
+  candidates.sort((a, b) => Number(b.entry.collisionProtected) - Number(a.entry.collisionProtected)
+    || b.baseScale - a.baseScale || b.entry.stars - a.entry.stars || a.entry.id.localeCompare(b.entry.id));
+  const index = createIndex();
+  for (const candidate of candidates) {
+    const box = bounds(candidate);
+    candidate.entry.collisionHidden = !candidate.entry.collisionProtected && index.overlaps(box).size > 0;
+    if (!candidate.entry.collisionHidden) index.add(candidate, box);
+  }
+}
+
 export function pathIntersectsViewport(source, destination, viewport, padding = 0) {
   // Clip the segment against a padded viewport, including off-screen endpoints.
   let first = 0;

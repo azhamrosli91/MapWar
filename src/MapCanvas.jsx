@@ -4,7 +4,7 @@ import { badgeElement, setBadgeTroopCount, setFeatureEffect, unitElement } from 
 import { coordinates } from "./data.js";
 import { createEffectOverlay } from "./effects.js";
 import { createPaintOverlay } from "./paint-overlay.js";
-import { boxIntersectsViewport, mapViewport, measureMarker, projectedMarkerBox } from "./viewport.js";
+import { boxIntersectsViewport, declutterMarkers, mapViewport, measureMarker, projectedMarkerBox } from "./viewport.js";
 import { HAS_MAP_KEY, MAPS_KEY } from "./maps-config.js";
 import { BADGE_SIZES, MAX_LINE_POINTS, compileRoute, scenarioNightShade, routeError, sampleRoute, scenarioTime, stopLabel } from "./timeline.js";
 
@@ -35,6 +35,14 @@ function curvedLinePath(points) {
 }
 
 const pointModes = ["placeBadge", "placeUnit", "drawLine", "addStop", "repointStop", "placeEffectTarget"];
+function cameraView(map) {
+  const center = map?.getCenter();
+  if (!center) return null;
+  const position = center.toJSON();
+  // Vector maps can report an unwrapped longitude while dragging across worlds.
+  position.lng = ((position.lng + 180) % 360 + 360) % 360 - 180;
+  return { center: position, zoom: map.getZoom(), mapTypeId: map.getMapTypeId(), heading: ((map.getHeading() ?? 0) % 360 + 360) % 360 };
+}
 function zoomAdjustedScale(scale, zoom, referenceZoom) {
   const zoomDelta = zoom - referenceZoom;
   const zoomOut = Math.max(0.8, 1 - Math.max(0, -zoomDelta) * 0.05);
@@ -95,7 +103,8 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         heading: startView.heading ?? 0, tilt: 0,
         headingInteractionEnabled: !live.current.renderMode, tiltInteractionEnabled: false,
         clickableIcons: false, streetViewControl: false, fullscreenControl: false,
-        mapTypeControl: false, cameraControl: !live.current.renderMode, zoomControl: !live.current.renderMode, zoomControlOptions: { position: window.google.maps.ControlPosition.RIGHT_CENTER }, gestureHandling: live.current.renderMode ? "none" : "greedy", keyboardShortcuts: !live.current.renderMode,
+        disableDefaultUI: live.current.cleanExport || live.current.renderMode,
+        mapTypeControl: false, cameraControl: !live.current.cleanExport && !live.current.renderMode, zoomControl: !live.current.cleanExport && !live.current.renderMode, zoomControlOptions: { position: window.google.maps.ControlPosition.RIGHT_CENTER }, gestureHandling: live.current.renderMode ? "none" : "greedy", keyboardShortcuts: !live.current.cleanExport && !live.current.renderMode,
       });
       setApi({ map, Polyline, OverlayView, AdvancedMarkerElement, CollisionBehavior, spherical });
       setMapTypeId(map.getMapTypeId());
@@ -104,7 +113,8 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         if (!live.current.preview && pointModes.includes(live.current.mode) && event.latLng) live.current.onPoint(event.latLng.toJSON());
       }));
       listeners.push(map.addListener("idle", () => {
-        if (map.getCenter()) live.current.onView({ center: map.getCenter().toJSON(), zoom: map.getZoom(), mapTypeId: map.getMapTypeId(), heading: ((map.getHeading() ?? 0) % 360 + 360) % 360 });
+        const view = cameraView(map);
+        if (view) live.current.onView(view);
       }));
       listeners.push(map.addListener("tilesloaded", () => {
         clearTimeout(timeout);
@@ -138,11 +148,12 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
     for (const entry of markers.current.values()) {
       const visible = time == null || ((entry.showTime == null || time >= entry.showTime) && (entry.hideTime == null || time < entry.hideTime));
       entry.visible = visible;
+      entry.collisionHidden = false;
       const sample = time == null ? null : sampleRoute(entry.route, time, api.spherical.interpolate);
       const position = sample?.position ?? entry.position;
       entry.currentPosition = typeof position.lat === "function" ? position : { lat: position.lat, lng: position.lng };
       entry.isMoving = !!sample?.moving;
-      entry.displayScale = zoomAdjustedScale(sample?.scale ?? entry.scale, zoom, startView.zoom);
+      entry.displayScale = zoomAdjustedScale(sample?.scale ?? entry.scale, zoom, live.current.referenceZoom ?? startView.zoom);
       const range = live.current.animationRange;
       const duration = live.current.animationDuration;
       const effectElapsed = sample?.effectStart != null && range && range.end > range.start && duration
@@ -153,15 +164,18 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
       if (visible) measureMarker(entry, markerMeasurements.current);
       const box = viewport ? projectedMarkerBox(entry, projection, viewport) : null;
       entry.inViewport = !box || boxIntersectsViewport(box, viewport, entry.dimensions.padding * entry.displayScale);
-      const rendered = visible && entry.inViewport;
+    }
+    declutterMarkers([...markers.current.values()], projection, viewport);
+    for (const entry of markers.current.values()) {
+      const rendered = entry.visible && entry.inViewport && !entry.collisionHidden;
       if (rendered) {
         entry.marker.position = entry.currentPosition;
         if (entry.appliedScale !== entry.displayScale) {
           entry.element.style.setProperty("--badge-scale", entry.displayScale);
           entry.appliedScale = entry.displayScale;
         }
-        setBadgeTroopCount(entry.element, sample?.troopCount ?? entry.troopCount);
-        setFeatureEffect(entry.element, sample?.effect ?? "none", effectElapsed, entry.isMoving);
+        setBadgeTroopCount(entry.element, entry.sample?.troopCount ?? entry.troopCount);
+        setFeatureEffect(entry.element, entry.sample?.effect ?? "none", entry.effectElapsed, entry.isMoving);
       }
       // Apply the current frame before reattaching a marker that enters view.
       if (entry.rendered !== rendered) {
@@ -294,7 +308,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
           }
         };
         const move = () => {
-          if (!entry.isDraft && !entry.route.length && !live.current.preview && live.current.mode === "navigate") {
+          if (!entry.hasRoute && !live.current.preview && live.current.mode === "navigate") {
             const p = marker.position;
             const position = typeof p.lat === "function" ? p.toJSON() : { lat: p.lat, lng: p.lng };
             if (entry.featureType === "unit") live.current.onUnitMove(entry.id, position);
@@ -317,13 +331,15 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
       entry.scale = BADGE_SIZES[badge.size] ?? 1;
       entry.stars = badge.featureType === "badge" ? badge.stars ?? 0 : 0;
       entry.route = badge.route.length >= 1 && !routeError(badge.route) ? compileRoute(badge.route, badge.troopCount ?? 0).map((stop) => ({ ...stop, lat: Number(stop.lat), lng: Number(stop.lng) })) : [];
+      entry.hasRoute = badge.route.length > 0;
       entry.marker.gmpClickable = !badge.isDraft && !preview && mode === "navigate";
-      entry.marker.gmpDraggable = !badge.isDraft && !preview && mode === "navigate" && !badge.route.length;
+      entry.marker.gmpDraggable = !preview && mode === "navigate" && !entry.hasRoute;
       entry.marker.title = badge.isDraft ? "Marker preview" : `Click to edit ${badge.label ?? badge.name}`;
       entry.alwaysShow = editingMovement || preview || mode === "export" || showAllMarkers || badge.isDraft || badge.id === selectedId;
-      entry.marker.collisionBehavior = entry.alwaysShow
-        ? api.CollisionBehavior.REQUIRED
-        : api.CollisionBehavior.OPTIONAL_AND_HIDES_LOWER_PRIORITY;
+      entry.collisionProtected = editingMovement || showAllMarkers || badge.isDraft || badge.id === selectedId;
+      // Our layout shrinks markers before hiding them; Google's collision pass
+      // would otherwise hide markers against one another or map labels first.
+      entry.marker.collisionBehavior = api.CollisionBehavior.REQUIRED;
       const appearance = JSON.stringify([badge.featureType, badge.flag, badge.symbol, badge.symbolImage, badge.stars, badge.troopCount, badge.label, badge.kind, badge.image, badge.color, badge.name, badge.id === selectedId, !!badge.isDraft]);
       if (entry.appearance !== appearance) {
         entry.element = badge.featureType === "unit" ? unitElement(badge, badge.id === selectedId, badge.isDraft) : badgeElement(badge, badge.id === selectedId, badge.isDraft);
@@ -572,16 +588,31 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
       if (position) api?.map.panTo(position);
     },
     restore(view) { api?.map.setOptions({ ...view, heading: view.heading ?? 0, tilt: 0 }); },
+    getReferenceZoom() { return startView.zoom; },
+    async renderFrame(view, time) {
+      if (!api) throw new Error("The map is not ready for a frame.");
+      const current = cameraView(api.map);
+      const longitudeDelta = current ? Math.abs(((current.center.lng - view.center.lng + 540) % 360) - 180) : Infinity;
+      const changed = !current || Math.abs(current.center.lat - view.center.lat) > 1e-9 || longitudeDelta > 1e-9
+        || Math.abs(current.zoom - view.zoom) > 1e-7 || Math.abs(current.heading - (view.heading ?? 0)) > 1e-7
+        || current.mapTypeId !== view.mapTypeId;
+      if (changed) {
+        api.map.setMapTypeId(view.mapTypeId);
+        api.map.moveCamera({ center: view.center, zoom: view.zoom, heading: view.heading ?? 0, tilt: 0 });
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      }
+      drawPreview(time);
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    },
     getView() {
-      const center = api?.map.getCenter();
-      return center ? { center: center.toJSON(), zoom: api.map.getZoom(), mapTypeId: api.map.getMapTypeId(), heading: ((api.map.getHeading() ?? 0) % 360 + 360) % 360 } : null;
+      return cameraView(api?.map);
     },
     setType(type) { api?.map.setMapTypeId(type); },
     rotate(angle) { if (api) api.map.setHeading(((api.map.getHeading() ?? 0) + angle + 360) % 360); },
     resetHeading() { api?.map.setHeading(0); },
-  }), [api, badges, units, lines, paintStrokes, drawPreview]);
+  }), [api, badges, units, lines, paintStrokes, drawPreview, startView.zoom]);
 
-  return <div className="google-map" ref={host} aria-label="Google map with badges, equipment, lines, and routes" />;
+  return <div className={`google-map${props.cleanExport || props.renderMode ? " clean-export-map" : ""}`} ref={host} aria-label="Google map with badges, equipment, lines, and routes" />;
 });
 
 export default MapCanvas;

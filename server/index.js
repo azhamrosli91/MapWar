@@ -10,6 +10,8 @@ import { chromium } from "playwright";
 import ffmpegPath from "ffmpeg-static";
 import { routeError, timelineRange, visibilityError } from "../src/timeline.js";
 import { validatePaintStrokes } from "../src/paint.js";
+import { UNIT_KINDS } from "../src/symbols.js";
+import { MAX_RECORDING_FRAMES, VIDEO_FPS, VIDEO_REQUEST_LIMIT } from "../src/video.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputDir = join(tmpdir(), `malaya-world-war-ii-video-${process.pid}`);
@@ -36,13 +38,13 @@ function viewOf(job) {
   return { id: job.id, status: job.status, progress: job.progress, error: job.error };
 }
 
-async function readJson(req) {
+async function readJson(req, limit = 25 * 1024 * 1024) {
   if (!req.headers["content-type"]?.startsWith("application/json")) throw new Error("Send JSON export settings.");
   let size = 0;
   const chunks = [];
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 25 * 1024 * 1024) throw new Error("The map exceeds the 25 MB export limit.");
+    if (size > limit) throw new Error(`The export exceeds the ${limit / 1024 / 1024} MB request limit.`);
     chunks.push(chunk);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
@@ -51,6 +53,12 @@ async function readJson(req) {
 
 function point(value) {
   return value && typeof value.lat === "number" && typeof value.lng === "number" && Number.isFinite(value.lat) && Number.isFinite(value.lng) && Math.abs(value.lat) <= 90 && Math.abs(value.lng) <= 180;
+}
+
+function validVideoView(view) {
+  return view && point(view.center) && Number.isFinite(view.zoom) && view.zoom >= 0 && view.zoom <= 22
+    && ["roadmap", "satellite", "hybrid", "terrain"].includes(view.mapTypeId)
+    && (view.heading == null || (Number.isFinite(view.heading) && view.heading >= 0 && view.heading < 360));
 }
 
 function validate(input) {
@@ -62,17 +70,28 @@ function validate(input) {
     if (!badge || !point(badge) || typeof badge.label !== "string" || badge.label.length > 80 || !["S", "M", "L", "XL"].includes(badge.size) || (badge.troopCount != null && (!Number.isSafeInteger(badge.troopCount) || badge.troopCount < 0)) || !Number.isInteger(badge.stars) || badge.stars < 0 || badge.stars > 5 || typeof badge.flag !== "string" || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(badge.flag) || badge.flag.length > 7_000_000 || (badge.symbolImage && (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(badge.symbolImage) || badge.symbolImage.length > 7_000_000)) || routeError(badge.route) || visibilityError(badge.visibility)) throw new Error("A badge, route, or visibility date is invalid.");
   }
   for (const unit of project.units) {
-    if (!unit || !point(unit) || typeof unit.name !== "string" || !unit.name.trim() || unit.name.length > 80 || !["tank", "warship", "artillery", "troop", "other"].includes(unit.kind) || !["S", "M", "L", "XL"].includes(unit.size) || typeof unit.showTrail !== "boolean" || (unit.image && (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(unit.image) || unit.image.length > 7_000_000)) || routeError(unit.route) || visibilityError(unit.visibility)) throw new Error("A movable symbol, route, or visibility date is invalid.");
+    if (!unit || !point(unit) || typeof unit.name !== "string" || !unit.name.trim() || unit.name.length > 80 || !UNIT_KINDS.includes(unit.kind) || !["S", "M", "L", "XL"].includes(unit.size) || typeof unit.showTrail !== "boolean" || (unit.image && (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(unit.image) || unit.image.length > 7_000_000)) || routeError(unit.route) || visibilityError(unit.visibility)) throw new Error("A movable symbol, route, or visibility date is invalid.");
   }
   for (const line of project.lines) {
     if (!line || !Array.isArray(line.path) || line.path.length < 2 || line.path.length > 2000 || line.path.some((position) => !point(position)) || !["solid", "dashed"].includes(line.style) || ![3, 6, 10].includes(line.width)) throw new Error("A drawn line is invalid.");
   }
-  if (!timelineRange([...project.badges, ...project.units])) throw new Error("Add a dated movement route or visibility date before exporting video.");
+  const range = timelineRange([...project.badges, ...project.units]);
+  if (input.recording == null && !range) throw new Error("Add a dated movement route or visibility date before exporting a fixed-view video.");
   const { orientation, logicalSize, view, duration, showDate } = input;
   const ratio = orientation === "portrait" ? [9, 16] : orientation === "landscape" ? [16, 9] : null;
   if (!ratio || !logicalSize || !Number.isInteger(logicalSize.width) || !Number.isInteger(logicalSize.height) || logicalSize.width < 90 || logicalSize.height < 90 || logicalSize.width > 1920 || logicalSize.height > 1920 || logicalSize.width * ratio[1] !== logicalSize.height * ratio[0]) throw new Error("Choose a valid portrait or landscape frame.");
-  if (!view || !point(view.center) || !Number.isFinite(view.zoom) || view.zoom < 0 || view.zoom > 22 || !["roadmap", "satellite", "hybrid", "terrain"].includes(view.mapTypeId)) throw new Error("Choose a valid map view.");
+  if (!validVideoView(view)) throw new Error("Choose a valid map view.");
   if (!Number.isInteger(duration) || duration < 5 || duration > 600 || typeof showDate !== "boolean") throw new Error("Choose a playback length from 5 to 600 seconds.");
+  if (input.recording != null) {
+    const { frames, referenceZoom } = input.recording;
+    if (!Number.isFinite(referenceZoom) || referenceZoom < 0 || referenceZoom > 22 || !Array.isArray(frames) || frames.length < 1 || frames.length > MAX_RECORDING_FRAMES) throw new Error("Choose a valid recording of up to 10 minutes.");
+    for (const frame of frames) {
+      if (!frame || !validVideoView(frame.view) || !Object.hasOwn(frame, "previewTime")
+        || (frame.previewTime !== null && (!range || !Number.isFinite(frame.previewTime) || frame.previewTime < range.start || frame.previewTime > range.end))) {
+        throw new Error("A recorded camera position or timeline time is invalid.");
+      }
+    }
+  }
   return input;
 }
 
@@ -92,7 +111,7 @@ async function captureMapImage(input) {
   let browser;
   try {
     try {
-      browser = await chromium.launch({ headless: true, args: ["--enable-webgl", "--use-gl=angle", "--use-angle=swiftshader"] });
+      browser = await chromium.launch({ headless: true, args: ["--enable-webgl", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
     } catch (error) {
       if (/executable doesn't exist|please run.*playwright install/i.test(error.message || "")) throw new Error("Install the local browser with npm run setup:video before downloading a picture.");
       throw error;
@@ -116,25 +135,60 @@ async function captureMapImage(input) {
   }
 }
 
+function trackFrameRequests(page) {
+  const pending = new Set();
+  const waiters = new Set();
+  page.on("request", (request) => {
+    // Google Maps creates long-lived blob worker scripts. Only network image
+    // and data requests can be needed to finish drawing a camera position.
+    if (["image", "fetch", "xhr"].includes(request.resourceType()) && /^https?:/.test(request.url())
+      && !new URL(request.url()).pathname.includes("gen_204")) pending.add(request);
+  });
+  const finished = (request) => {
+    pending.delete(request);
+    if (!pending.size) for (const done of [...waiters]) done();
+  };
+  page.on("requestfinished", finished);
+  page.on("requestfailed", finished);
+  page.on("close", () => { for (const done of [...waiters]) done(new Error("The render browser was closed.")); });
+  return () => {
+    if (!pending.size) return Promise.resolve();
+    return new Promise((resolveWait, rejectWait) => {
+      const done = (error) => {
+        clearTimeout(timeout);
+        waiters.delete(done);
+        if (error) rejectWait(error); else resolveWait();
+      };
+      const timeout = setTimeout(() => done(new Error("Map tiles took too long to load for a recorded view.")), 30000);
+      waiters.add(done);
+    });
+  };
+}
+
 async function render(job) {
   const input = job.input;
   const format = input.orientation === "portrait" ? { width: 1080, height: 1920 } : { width: 1920, height: 1080 };
   const scale = format.width / input.logicalSize.width;
   const range = timelineRange([...input.project.badges, ...input.project.units]);
-  const frames = input.duration * 30;
+  const frames = input.recording?.frames.length ?? input.duration * VIDEO_FPS;
   const origin = renderOrigin;
   let browser;
   let encoder;
+  let encoderDone;
   try {
-    browser = await chromium.launch({ headless: true, args: ["--enable-webgl", "--use-gl=angle", "--use-angle=swiftshader"] });
+    browser = await chromium.launch({ headless: true, args: ["--enable-webgl", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
     job.browser = browser;
     if (job.cancelled) return;
     const context = await browser.newContext({ viewport: input.logicalSize, deviceScaleFactor: scale });
     const page = await context.newPage();
+    const waitForFrameRequests = trackFrameRequests(page);
     page.setDefaultTimeout(30000);
     await page.goto(`${origin}/render.html`, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => !!window.fieldmarkRender);
-    await page.evaluate((value) => window.fieldmarkRender.load(value), input);
+    // Recorded frames are sent individually below, avoiding a second browser copy.
+    await page.evaluate((value) => window.fieldmarkRender.load(value), input.recording ? {
+      ...input, recording: { referenceZoom: input.recording.referenceZoom, initialFrame: input.recording.frames[0] },
+    } : input);
     await page.waitForFunction(() => window.fieldmarkRender?.ready, { timeout: 30000 });
     await page.evaluate(async () => {
       await document.fonts.ready;
@@ -150,6 +204,7 @@ async function render(job) {
       encoder.once("error", rejectDone);
       encoder.once("close", (code) => code === 0 ? resolveDone() : rejectDone(new Error(ffmpegError || `FFmpeg exited with code ${code}.`)));
     });
+    encoderDone = done;
     done.catch(() => {});
     let writeError = null;
     encoder.stdin.on("error", (error) => { writeError = error; });
@@ -157,8 +212,14 @@ async function render(job) {
     for (let frame = 0; frame < frames; frame++) {
       if (job.cancelled) return;
       if (writeError) throw writeError;
-      const time = range.start + (range.end - range.start) * frame / (frames - 1);
-      await page.evaluate((value) => window.fieldmarkRender.seek(value), time);
+      if (input.recording) {
+        await page.evaluate((value) => window.fieldmarkRender.frame(value), input.recording.frames[frame]);
+        await waitForFrameRequests();
+        await page.evaluate(() => new Promise((resolveFrame) => requestAnimationFrame(() => requestAnimationFrame(resolveFrame))));
+      } else {
+        const time = range.start + (range.end - range.start) * frame / (frames - 1);
+        await page.evaluate((value) => window.fieldmarkRender.seek(value), time);
+      }
       const image = await surface.screenshot({ type: "png", animations: "disabled", timeout: 30000 });
       if (!encoder.stdin.write(image)) await Promise.race([once(encoder.stdin, "drain"), done.then(() => { throw new Error("The encoder stopped before all frames were written."); })]);
       job.progress = Math.floor((frame + 1) / frames * 100);
@@ -168,8 +229,12 @@ async function render(job) {
     await done;
     if (!job.cancelled) job.status = "completed";
   } finally {
-    if (job.cancelled) encoder?.kill();
+    if (job.status !== "completed") {
+      encoder?.stdin.destroy();
+      encoder?.kill();
+    }
     await browser?.close().catch(() => {});
+    await encoderDone?.catch(() => {});
     job.browser = null;
     job.encoder = null;
     job.finished = Date.now();
@@ -213,7 +278,7 @@ async function handleApi(req, res, path) {
   if (path === "/api/video/jobs" && req.method === "POST") {
     if (queue.length >= 2) return reply(res, 429, { error: "Two videos are already waiting. Try again when one finishes." });
     try {
-      const input = validate(await readJson(req));
+      const input = validate(await readJson(req, VIDEO_REQUEST_LIMIT));
       const id = randomUUID();
       const job = { id, input, orientation: input.orientation, status: "queued", progress: 0, error: null, cancelled: false, created: Date.now(), file: join(outputDir, `${id}.mp4`) };
       jobs.set(id, job);
@@ -242,7 +307,9 @@ async function handleApi(req, res, path) {
       if (index >= 0) { job.finished = Date.now(); job.input = null; }
       job.encoder?.kill();
       job.browser?.close().catch(() => {});
-      rmSync(job.file, { force: true });
+      // Active encoders still hold their file open on Windows. The renderer
+      // removes it after the encoder has exited.
+      if (!job.encoder && !job.browser) rmSync(job.file, { force: true });
     }
     return reply(res, 200, viewOf(job));
   }
