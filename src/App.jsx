@@ -32,6 +32,7 @@ import {
   X,
 } from "lucide-react";
 import MapCanvas from "./MapCanvas.jsx";
+import MapFeatureControls from "./MapFeatureControls.jsx";
 import LineEditor from "./LineEditor.jsx";
 import RouteEditor from "./RouteEditor.jsx";
 import UnitEditor from "./UnitEditor.jsx";
@@ -44,7 +45,7 @@ import PictureExportPanel from "./PictureExportPanel.jsx";
 import usePlayback from "./usePlayback.js";
 import useVideoJobs from "./useVideoJobs.js";
 import { videoDate, videoFrameSize } from "./video.js";
-import { BADGE_SIZES, MAX_LINES, MAX_LINE_POINTS, MAX_STOPS, createRouteStop, routeError, timelineRange, visibilityError } from "./timeline.js";
+import { BADGE_SIZES, MAX_LINES, MAX_LINE_POINTS, MAX_STOPS, TARGET_EFFECTS, createRouteStop, insertMovementStop, nextHour, scenarioTime, startMovementRoute, routeError, timelineRange, visibilityError } from "./timeline.js";
 import { HAS_MAP_KEY } from "./maps-config.js";
 import { BADGE_SYMBOLS, DEFAULT_BADGE_SYMBOL, UNIT_KINDS, unitImage } from "./badge.js";
 import { MAX_PAINT_POINTS, MAX_PAINT_STROKES } from "./paint.js";
@@ -234,6 +235,8 @@ export default function App() {
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState(null);
   const [formError, setFormError] = useState("");
+  const [featureMenu, setFeatureMenu] = useState(null);
+  const [mapEdit, setMapEdit] = useState(null);
   const mapRef = useRef(null);
   const mapStageRef = useRef(null);
   const editingView = useRef(null);
@@ -339,7 +342,16 @@ export default function App() {
     );
   }
 
-  function resetEditor() {
+  function resetEditor(restoreMapFocus = true) {
+    const restoreFocus = restoreMapFocus && (mapEdit?.restoreFocus ?? featureMenu?.restoreFocus);
+    if (restoreFocus) requestAnimationFrame(restoreFocus);
+    if (mapEdit) {
+      playback.pause();
+      if (mapEdit.originalTime != null) playback.seek(mapEdit.originalTime, true);
+      else playback.edit();
+    }
+    setMapEdit(null);
+    setFeatureMenu(null);
     uploadSequence.current++;
     setUploading(false);
     setDraft(null);
@@ -351,6 +363,140 @@ export default function App() {
     setMode("navigate");
     setDirty(false);
     setFormError("");
+  }
+
+  function openFeatureMenu(menu) {
+    if (exportOpen || mapStatus !== "ready") return;
+    const time = mapEdit?.time ?? (playback.preview ? playback.getTime() ?? playback.cursor : null);
+    playback.pause();
+    setFeatureMenu({ ...menu, time: time == null ? null : Math.floor(time / 60000) * 60000 });
+  }
+
+  function dismissFeatureMenu() {
+    featureMenu?.restoreFocus?.();
+    setFeatureMenu(null);
+  }
+
+  function openEffectTargetMenu(menu) {
+    if (exportOpen || mapStatus !== "ready" || mapEdit?.ui !== "movement" || menu.id === mapEdit.feature.id) return;
+    const target = [...project.badges, ...project.units].find((feature) => feature.id === menu.id);
+    if (!target) return;
+    setFeatureMenu({ ...menu, kind: "effect", targetName: target.label ?? target.name });
+  }
+
+  function chooseMovementEffect(effect) {
+    if (exportOpen || mapEdit?.ui !== "movement" || (effect !== "none" && !TARGET_EFFECTS.includes(effect))) return;
+    const targetId = effect === "none" ? undefined : featureMenu?.kind === "effect" ? featureMenu.id : undefined;
+    if (effect !== "none" && (!targetId || targetId === mapEdit.feature.id || ![...project.badges, ...project.units].some((feature) => feature.id === targetId))) return;
+    setMapEdit((current) => {
+      if (current?.ui !== "movement") return current;
+      const route = current.feature.route.map((stop) => stop.dateTime === current.dateTime ? {
+        ...stop, effect, firingTargetId: targetId, targetLocation: undefined,
+      } : stop);
+      return { ...current, feature: { ...current.feature, route }, error: "" };
+    });
+    setDirty(true);
+    setFormError("");
+    dismissFeatureMenu();
+  }
+
+  function beginMapEdit(ui) {
+    if (!featureMenu || !discardAllowed()) return;
+    const feature = (featureMenu.featureType === "badge" ? project.badges : project.units).find((item) => item.id === featureMenu.id);
+    if (!feature) return;
+    const time = featureMenu.time;
+    const dateTime = time == null ? range ? new Date(range.start).toISOString().slice(0, 16) : "" : new Date(time).toISOString().slice(0, 16);
+    let edited = structuredClone(feature);
+    if (ui === "movement" && time != null) {
+      try { edited.route = startMovementRoute(feature, dateTime, mapRef.current?.sampleFeature(feature, time)); }
+      catch (error) { setMessage({ error: true, text: error.message }); return; }
+    }
+    const session = { ...featureMenu, ui: ui === "movement" && time == null ? "start" : ui,
+      feature: edited, dateTime, time, originalTime: time };
+    resetEditor(false);
+    playback.pause();
+    if (time != null) playback.seek(time, true);
+    setMapEdit(session);
+    setSelectedId(feature.id);
+    setMode(session.ui === "movement" ? "editMovement" : "mapEdit");
+    setDirty(ui === "movement" && time != null);
+  }
+
+  function updateMapEdit(changes) {
+    if (!mapEdit) return;
+    if (mapEdit.ui === "start") setMapEdit({ ...mapEdit, ...changes });
+    else {
+      const feature = { ...mapEdit.feature, ...changes };
+      if (feature.route.length) feature.route = feature.route.map((stop, index) => index === 0 ? {
+        ...stop, size: feature.size, ...(mapEdit.featureType === "badge" ? { troopCount: feature.troopCount } : {}),
+      } : stop);
+      setMapEdit({ ...mapEdit, feature });
+    }
+    setDirty(true);
+    setFormError("");
+  }
+
+  function startMapMovement() {
+    const time = scenarioTime(mapEdit.dateTime);
+    try {
+      const route = startMovementRoute(mapEdit.feature, mapEdit.dateTime, time == null ? null : mapRef.current?.sampleFeature(mapEdit.feature, time));
+      setMapEdit({ ...mapEdit, ui: "movement", time, feature: { ...mapEdit.feature, route } });
+      setMode("editMovement");
+      setDirty(true);
+      setFormError("");
+    } catch (error) { setFormError(error.message); }
+  }
+
+  function addMapMovementPoint(position) {
+    const id = crypto.randomUUID();
+    setMapEdit((current) => {
+      if (current?.ui !== "movement") return current;
+      try {
+        const source = current.feature.route.find((stop) => stop.dateTime === current.dateTime);
+        const dateTime = nextHour(current.dateTime);
+        if (!dateTime) throw new Error("The next point exceeds the supported date range.");
+        const route = insertMovementStop(current.feature.route, { ...structuredClone(source), ...position, id, dateTime });
+        return { ...current, dateTime, time: scenarioTime(dateTime), feature: { ...current.feature, route }, error: "" };
+      } catch (error) { return { ...current, error: error.message }; }
+    });
+    setDirty(true);
+    setFormError("");
+  }
+
+  function saveMapEdit() {
+    const feature = { ...mapEdit.feature };
+    const nameKey = mapEdit.featureType === "badge" ? "label" : "name";
+    feature[nameKey] = feature[nameKey].trim();
+    if (!feature[nameKey] || feature[nameKey].length > 80) return setFormError("Enter a name of up to 80 characters.");
+    if (mapEdit.featureType === "badge" && (!Number.isSafeInteger(feature.troopCount) || feature.troopCount < 0)) return setFormError("Enter a non-negative whole troop count.");
+    const problem = routeError(feature.route);
+    if (problem) return setFormError(problem);
+    if (feature.route.length) {
+      const first = feature.route[0];
+      Object.assign(feature, { lat: Number(first.lat), lng: Number(first.lng), size: first.size });
+      if (mapEdit.featureType === "badge") feature.troopCount = first.troopCount ?? feature.troopCount;
+    }
+    const collection = mapEdit.featureType === "badge" ? "badges" : "units";
+    const updated = { ...project, [collection]: project[collection].map((item) => item.id === feature.id ? feature : item) };
+    try { checkProjectSize(updated); } catch (error) { return setFormError(error.message); }
+    const time = mapEdit.time;
+    setProject(updated);
+    resetEditor();
+    if (time != null) playback.seek(time, true);
+    setMessage({ text: "Changes saved." });
+  }
+
+  function openFullMapEditor() {
+    if (mapEdit.featureType === "badge" && (!Number.isSafeInteger(mapEdit.feature.troopCount) || mapEdit.feature.troopCount < 0)) {
+      setFormError("Enter a non-negative whole troop count.");
+      return;
+    }
+    const session = { ...mapEdit, ui: "full" };
+    setMapEdit(session);
+    if (session.featureType === "badge") { setDraft(session.feature); setSection("badges"); }
+    else { setUnitDraft(session.feature); setSection("units"); }
+    setMode("navigate");
+    setPanelOpen(true);
   }
 
   function addBadge() {
@@ -384,7 +530,7 @@ export default function App() {
   }
 
   function selectBadge(id) {
-    if (playback.preview) return;
+    if (playback.preview && mapEdit?.ui !== "full") return;
     if (draft?.id === id) {
       setPanelOpen(true);
       return;
@@ -426,7 +572,7 @@ export default function App() {
   }
 
   function moveBadge(id, position) {
-    if (playback.preview) return;
+    if (playback.preview && mapEdit?.ui !== "full") return;
     if (draft?.id === id) {
       if (!draft.route.length) updateDraft(position);
       return;
@@ -451,7 +597,7 @@ export default function App() {
   }
 
   function selectUnit(id) {
-    if (playback.preview) return;
+    if (playback.preview && mapEdit?.ui !== "full") return;
     if (unitDraft?.id === id) { setPanelOpen(true); return; }
     if (!discardAllowed()) return;
     const unit = project.units.find((item) => item.id === id);
@@ -484,7 +630,7 @@ export default function App() {
   }
 
   function moveUnit(id, position) {
-    if (playback.preview) return;
+    if (playback.preview && mapEdit?.ui !== "full") return;
     if (unitDraft?.id === id) {
       if (!unitDraft.route.length) updateUnit(position);
       return;
@@ -876,7 +1022,7 @@ export default function App() {
   }
 
   function selectLine(id) {
-    if (playback.preview) return;
+    if (playback.preview && mapEdit?.ui !== "full") return;
     if (lineDraft?.id === id) { setPanelOpen(true); return; }
     if (!discardAllowed()) return;
     const line = project.lines.find((item) => item.id === id);
@@ -908,7 +1054,8 @@ export default function App() {
   }
 
   function mapPoint(position) {
-    if (playback.preview) return;
+    if (mode === "editMovement" && mapEdit?.ui === "movement") { addMapMovementPoint(position); return; }
+    if (playback.preview && mapEdit?.ui !== "full") return;
     if (mode === "placeBadge") placeBadge(position);
     if (mode === "placeUnit") { updateUnit({ lat: position.lat.toFixed(6), lng: position.lng.toFixed(6) }); setMode("navigate"); setPanelOpen(true); }
     if (mode === "drawLine" && lineDraft) {
@@ -943,13 +1090,13 @@ export default function App() {
 
   function moveStop(id, position) {
     const feature = draft ?? unitDraft;
-    if (!feature || playback.preview) return;
+    if (!feature || (playback.preview && mapEdit?.ui !== "full")) return;
     const changes = { route: feature.route.map((stop) => stop.id === id ? { ...stop, ...position } : stop) };
     if (draft) updateDraft(changes); else updateUnit(changes);
   }
 
   function beginPreview(action) {
-    if (!playback.preview) {
+    if (!playback.preview || mapEdit) {
       if (!discardAllowed()) return;
       resetEditor();
       if (window.matchMedia("(max-width: 700px)").matches) setPanelOpen(false);
@@ -1015,7 +1162,7 @@ export default function App() {
     closeExport();
   }
 
-  const timeline = <Timeline range={range} duration={project.playbackDuration} onDuration={(playbackDuration) => setProject((current) => ({ ...current, playbackDuration }))} playback={playback} onRestart={() => beginPreview(playback.restart)} onSeek={(time) => beginPreview(() => { playback.pause(); playback.seek(time); })} disabled={mapStatus !== "ready"} minimized={timelineMinimized} onMinimizedChange={setTimelineMinimized} />;
+  const timeline = <Timeline range={range} duration={project.playbackDuration} onDuration={(playbackDuration) => setProject((current) => ({ ...current, playbackDuration }))} playback={playback} onRestart={() => beginPreview(playback.restart)} onSeek={(time) => beginPreview(() => { playback.pause(); playback.seek(time); })} disabled={mapStatus !== "ready" || !!mapEdit} minimized={timelineMinimized} onMinimizedChange={setTimelineMinimized} />;
 
   const secondaryActions = (<>
             <button
@@ -1122,7 +1269,7 @@ export default function App() {
             <button
               className="text-button header-edit-button"
               disabled={exportOpen}
-              onClick={playback.edit}
+              onClick={() => { if (mapEdit) { if (!discardAllowed()) return; resetEditor(); } setFeatureMenu(null); playback.edit(); }}
               aria-label="Edit map"
               title="Edit map"
             >
@@ -1170,8 +1317,8 @@ export default function App() {
               <PanelLeftClose size={19} />
             </button>
           </div>
-          {playback.preview && <p className="sidebar-preview-note">Animation preview. Choose <strong>Edit map</strong> beside Play in the header to edit your features.</p>}
-          <div className="sidebar-content" inert={playback.preview || exportOpen}>
+          {playback.preview && !mapEdit && <p className="sidebar-preview-note">Right-click a badge or equipment to edit it or start a movement from this date. Choose <strong>Edit map</strong> for the main editor.</p>}
+          <div className="sidebar-content" inert={(playback.preview && mapEdit?.ui !== "full") || exportOpen || (!!mapEdit && mapEdit.ui !== "full")}>
             <div className="sidebar-tabs" aria-label="Map features">{["badges", "units", "lines", "paint"].map((tab) => <button key={tab} className={section === tab ? "active" : ""} onClick={() => switchSection(tab)}>{tab === "badges" ? "Badges" : tab === "units" ? "Equipment" : tab === "paint" ? "Paint" : "Lines & text"} <span>{project[tab === "paint" ? "paintStrokes" : tab].length}</span></button>)}</div>
             {section === "paint" ? <div className="paint-controls">
               <p className="intro-copy">Drag on the map to color an area. Paint stays attached to the map as you zoom.</p>
@@ -1517,14 +1664,18 @@ export default function App() {
               initialView={exportOpen ? exportCamera : editingView.current ?? initialView}
               badges={project.badges}
               units={project.units}
-              draft={draft}
-              unitDraft={unitDraft}
+              draft={mapEdit && mapEdit.ui !== "full" && mapEdit.featureType === "badge" ? mapEdit.feature : draft}
+              unitDraft={mapEdit && mapEdit.ui !== "full" && mapEdit.featureType === "unit" ? mapEdit.feature : unitDraft}
               targetLocationStopId={targetLocationStopId}
               selectedId={exportOpen ? null : selectedId}
               cleanExport={exportOpen}
               mode={exportOpen ? "export" : mode}
-              preview={playback.preview}
+              preview={mapEdit ? false : playback.preview}
+              playing={playback.playing}
               previewTime={playback.cursor}
+              authoringTime={mapEdit?.time}
+              onFeatureContextMenu={exportOpen ? undefined : openFeatureMenu}
+              onEffectTargetSelect={exportOpen ? undefined : openEffectTargetMenu}
               animationRange={range}
               animationDuration={project.playbackDuration}
               lines={project.lines}
@@ -1551,6 +1702,11 @@ export default function App() {
             {videoOpen && videoShowDate && playback.preview && range && <time className="video-date-stamp">{videoDate(playback.cursor)}</time>}
             </div>
           )}
+          {!exportOpen && <MapFeatureControls menu={featureMenu} session={mapEdit} targets={[...project.badges, ...project.units]} error={mapEdit?.error || formError}
+            onDismiss={dismissFeatureMenu} onEdit={() => beginMapEdit("edit")} onMovement={() => beginMapEdit("movement")}
+            onEffect={chooseMovementEffect}
+            onChange={updateMapEdit} onStart={startMapMovement} onSave={saveMapEdit}
+            onCancel={() => { if (discardAllowed()) resetEditor(); }} onFullEditor={openFullMapEditor} />}
           {!exportOpen && <div className="map-toolbar">
             {!panelOpen && !mapFullscreen && (
               <button

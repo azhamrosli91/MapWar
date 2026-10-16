@@ -8,9 +8,9 @@ export default function usePlayback(mapRef, range, duration) {
   const start = range?.start;
   const end = range?.end;
 
-  const seek = useCallback((time) => {
-    if (start == null || !Number.isFinite(time)) return;
-    const next = Math.max(start, Math.min(end, time));
+  const seek = useCallback((time, allowOutsideRange = false) => {
+    if ((!allowOutsideRange && start == null) || !Number.isFinite(time)) return;
+    const next = allowOutsideRange ? time : Math.max(start, Math.min(end, time));
     clock.current = next;
     setPreview(true);
     setCursor(next);

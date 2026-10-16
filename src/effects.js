@@ -195,7 +195,7 @@ export function createEffectOverlay(api, onProjectionReady) {
       if (previewPoint) this.targetPreview.setAttribute("transform", `translate(${previewPoint.x} ${previewPoint.y})`);
       for (const entry of this.entries.values()) {
         const effect = entry.sample?.effect;
-        if (!effect || effect === "none" || !entry.visible) continue;
+        if (!effect || effect === "none" || effect === "surrender" || !entry.visible) continue;
         if (!Number.isFinite(entry.effectElapsed)) continue;
         const repeatWhileMoving = entry.isMoving && (effect === "firing" || effect === "booming");
         const travelDuration = effect === "firing" ? SHOT_OFFSETS.at(-1) + SHOT_MS : EFFECT_CYCLES[effect] * 0.56;

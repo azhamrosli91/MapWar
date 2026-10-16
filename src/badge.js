@@ -24,7 +24,7 @@ export function unitImage(unit) {
 export function unitKindLabel(kind) {
   return kind === "troop" ? "Troops / Infantry" : kind === "other" ? "Uploaded image" : BADGE_SYMBOLS.find((symbol) => symbol.value === kind)?.label ?? kind;
 }
-export const effectSymbols = { booming: "✹", demolish: "▥", kills: "☠", crack: "ϟ" };
+export const effectSymbols = { booming: "✹", demolish: "▥", kills: "☠", crack: "ϟ", surrender: "🏳️" };
 
 export const DEFAULT_BADGE_SYMBOL = "helmet";
 
@@ -123,7 +123,7 @@ export function setFeatureEffect(element, effect, elapsedMs = 0, repeatWhileMovi
   }
   if (effect === "none" || effect === "firing") return;
   let seconds = Math.max(0, elapsedMs) / 1000;
-  const animationDuration = { booming: 1.35, demolish: 1.5, kills: 1.25, crack: 0.8 }[effect];
+  const animationDuration = { booming: 1.35, demolish: 1.5, kills: 1.25, crack: 0.8, surrender: 1.5 }[effect];
   const repeats = repeatWhileMoving && effect === "booming";
   if (seconds >= animationDuration && !repeats) {
     target.style.opacity = 1;
@@ -151,6 +151,11 @@ export function setFeatureEffect(element, effect, elapsedMs = 0, repeatWhileMovi
     const pulse = Math.sin(seconds * Math.PI * 2 / 1.25);
     scale = 1 + 0.15 * (pulse + 1) / 2;
     opacity = 0.7 + 0.3 * (pulse + 1) / 2;
+  } else if (effect === "surrender") {
+    const phase = seconds / 1.5;
+    y = (1 - phase) * 8;
+    opacity = 0.4 + phase * 0.6;
+    angle = Math.sin(phase * Math.PI * 4) * (1 - phase) * 12;
   } else if (effect === "crack") {
     const phase = seconds;
     opacity = phase < 0.16 || (phase >= 0.27 && phase < 0.34) ? 1 : 0.32;

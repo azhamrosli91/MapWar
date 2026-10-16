@@ -34,7 +34,7 @@ function curvedLinePath(points) {
   return result;
 }
 
-const pointModes = ["placeBadge", "placeUnit", "drawLine", "addStop", "repointStop", "placeEffectTarget"];
+const pointModes = ["placeBadge", "placeUnit", "drawLine", "addStop", "repointStop", "placeEffectTarget", "editMovement"];
 function cameraView(map) {
   const center = map?.getCenter();
   if (!center) return null;
@@ -60,7 +60,7 @@ function zoomAdjustedScale(scale, zoom, referenceZoom) {
 }
 
 const MapCanvas = forwardRef(function MapCanvas(props, ref) {
-  const { initialView, badges, units = [], draft, unitDraft, targetLocationStopId, selectedId, mode, preview, previewTime: initialPreviewTime, lines, lineDraft, paintStrokes = [], brush, showAllMarkers = false } = props;
+  const { initialView, badges, units = [], draft, unitDraft, targetLocationStopId, selectedId, mode, preview, playing = false, previewTime: initialPreviewTime, authoringTime, lines, lineDraft, paintStrokes = [], brush, showAllMarkers = false } = props;
   const host = useRef(null);
   const live = useRef(props);
   const markers = useRef(new Map());
@@ -140,6 +140,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
   }, [startView]);
 
   const drawPreview = useCallback((time) => {
+    time = live.current.authoringTime ?? time;
     previewTime.current = time;
     if (!api) return;
     const projection = effectOverlay.current?.getProjection();
@@ -301,11 +302,22 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
       if (!entry) {
         const marker = new api.AdvancedMarkerElement({ map: api.map });
         entry = { marker, listeners: [], visible: true, rendered: true };
-        const select = () => {
+        const select = (event) => {
+          if (live.current.mode === "editMovement" && !live.current.preview && !live.current.cleanExport && !live.current.renderMode) {
+            event.stopPropagation();
+            if (!entry.isDraft) {
+              const bounds = marker.getBoundingClientRect();
+              live.current.onEffectTargetSelect?.({ id: entry.id, x: bounds.left + bounds.width / 2, y: bounds.bottom, restoreFocus: () => marker.focus() });
+            }
+            return;
+          }
           if (!entry.isDraft && !live.current.preview && live.current.mode === "navigate") {
             if (entry.featureType === "unit") live.current.onUnitSelect(entry.id);
             else live.current.onSelect(entry.id);
           }
+        };
+        const consumeMovementClick = (event) => {
+          if (live.current.mode === "editMovement") event.stopPropagation();
         };
         const move = () => {
           if (!entry.hasRoute && !live.current.preview && live.current.mode === "navigate") {
@@ -315,7 +327,17 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
             else live.current.onMove(entry.id, position);
           }
         };
-        for (const [event, handler] of [["gmp-click", select], ["gmp-dragend", move]]) {
+        const context = (event) => {
+          if (live.current.cleanExport || live.current.renderMode || !live.current.onFeatureContextMenu) return;
+          if (event.type === "keydown" && event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const bounds = marker.getBoundingClientRect();
+          live.current.onFeatureContextMenu({ id: entry.id, featureType: entry.featureType,
+            x: event.type === "keydown" ? bounds.left + bounds.width / 2 : event.clientX,
+            y: event.type === "keydown" ? bounds.bottom : event.clientY, restoreFocus: () => marker.focus() });
+        };
+        for (const [event, handler] of [["gmp-click", select], ["gmp-dragend", move], ["contextmenu", context], ["keydown", context], ["click", consumeMovementClick]]) {
           marker.addEventListener(event, handler);
           entry.listeners.push(() => marker.removeEventListener(event, handler));
         }
@@ -332,9 +354,9 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
       entry.stars = badge.featureType === "badge" ? badge.stars ?? 0 : 0;
       entry.route = badge.route.length >= 1 && !routeError(badge.route) ? compileRoute(badge.route, badge.troopCount ?? 0).map((stop) => ({ ...stop, lat: Number(stop.lat), lng: Number(stop.lng) })) : [];
       entry.hasRoute = badge.route.length > 0;
-      entry.marker.gmpClickable = !badge.isDraft && !preview && mode === "navigate";
+      entry.marker.gmpClickable = !badge.isDraft && (preview || mode === "navigate" || mode === "editMovement");
       entry.marker.gmpDraggable = !preview && mode === "navigate" && !entry.hasRoute;
-      entry.marker.title = badge.isDraft ? "Marker preview" : `Click to edit ${badge.label ?? badge.name}`;
+      entry.marker.title = badge.isDraft ? "Marker preview" : mode === "editMovement" ? `Choose an effect targeting ${badge.label ?? badge.name}` : `Click to edit ${badge.label ?? badge.name}. Right-click for edit and movement controls.`;
       entry.alwaysShow = editingMovement || preview || mode === "export" || showAllMarkers || badge.isDraft || badge.id === selectedId;
       entry.collisionProtected = editingMovement || showAllMarkers || badge.isDraft || badge.id === selectedId;
       // Our layout shrinks markers before hiding them; Google's collision pass
@@ -350,8 +372,8 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
       }
       entry.element.classList.toggle("movement-context", editingMovement && !badge.isDraft);
     }
-    drawPreview(preview ? (previewTime.current ?? initialPreviewTime) : null);
-  }, [api, badges, units, draft, unitDraft, selectedId, mode, preview, initialPreviewTime, showAllMarkers, editingMovement, drawPreview]);
+    drawPreview(preview ? playing ? previewTime.current ?? initialPreviewTime : initialPreviewTime : null);
+  }, [api, badges, units, draft, unitDraft, selectedId, mode, preview, playing, initialPreviewTime, authoringTime, showAllMarkers, editingMovement, drawPreview]);
 
   useEffect(() => {
     if (!api) return;
@@ -570,6 +592,11 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
 
   useImperativeHandle(ref, () => ({
     previewAt: drawPreview,
+    sampleFeature(feature, time) {
+      if (!api || routeError(feature.route)) return null;
+      const route = compileRoute(feature.route, feature.troopCount ?? 0).map((stop) => ({ ...stop, lat: Number(stop.lat), lng: Number(stop.lng) }));
+      return sampleRoute(route, time, api.spherical.interpolate);
+    },
     fitAll() {
       if (!api) return;
       const points = [...[...badges, ...units].flatMap((badge) => [badge, ...badge.route]), ...lines.flatMap((line) => line.path), ...paintStrokes.flatMap((stroke) => stroke.points)];

@@ -1,5 +1,6 @@
 export const BADGE_SIZES = { S: 0.5, M: 1, L: 1.25, XL: 1.5 };
-export const ROUTE_EFFECTS = ["none", "firing", "booming", "demolish", "kills", "crack"];
+export const ROUTE_EFFECTS = ["none", "firing", "booming", "demolish", "kills", "crack", "surrender"];
+export const TARGET_EFFECTS = ROUTE_EFFECTS.filter((effect) => effect !== "none" && effect !== "surrender");
 export const MAX_STOPS = 200;
 export const MAX_LINES = 200;
 export const MAX_LINE_POINTS = 2000;
@@ -25,6 +26,36 @@ export function createRouteStop(route, position = {}) {
     id: crypto.randomUUID(),
     dateTime: nextHour(route.at(-1).dateTime),
   };
+}
+
+export function insertMovementStop(route, stop) {
+  const problem = routeError(route);
+  if (problem) throw new Error(problem);
+  const existing = route.find((item) => item.dateTime === stop.dateTime);
+  if (!existing && route.length >= MAX_STOPS) throw new Error(`Use at most ${MAX_STOPS} route stops.`);
+  const next = existing
+    ? route.map((item) => item.id === existing.id ? { ...item, lat: stop.lat, lng: stop.lng } : item)
+    : [...route, stop].sort((a, b) => scenarioTime(a.dateTime) - scenarioTime(b.dateTime));
+  const nextProblem = routeError(next);
+  if (nextProblem) throw new Error(nextProblem);
+  return next;
+}
+
+export function startMovementRoute(feature, dateTime, sample) {
+  if (scenarioTime(dateTime) === null) throw new Error("Choose a valid starting date and time.");
+  const existing = feature.route.find((stop) => stop.dateTime === dateTime);
+  if (existing) return structuredClone(feature.route);
+  const position = sample?.position ?? feature;
+  const size = sample ? Object.keys(BADGE_SIZES).reduce((closest, candidate) =>
+    Math.abs(BADGE_SIZES[candidate] - sample.scale) < Math.abs(BADGE_SIZES[closest] - sample.scale) ? candidate : closest, feature.size) : feature.size;
+  return insertMovementStop(feature.route, {
+    id: crypto.randomUUID(), dateTime,
+    lat: typeof position.lat === "function" ? position.lat() : Number(position.lat),
+    lng: typeof position.lng === "function" ? position.lng() : Number(position.lng),
+    size, troopCount: sample?.troopCount ?? feature.troopCount,
+    effect: sample?.effect ?? "none", firingTargetId: sample?.firingTargetId,
+    targetLocation: sample?.targetLocation ? structuredClone(sample.targetLocation) : undefined,
+  });
 }
 
 export function stopLabel(index) {
