@@ -54,7 +54,7 @@ export function boxIntersectsViewport(box, viewport, padding = 0) {
     && box.y - box.height / 2 - padding <= viewport.bottom;
 }
 
-export function declutterMarkers(entries, projection, viewport) {
+export function declutterMarkers(entries, projection, viewport, zoom = 0) {
   if (!viewport) return;
   const candidates = entries.filter((entry) => entry.visible && entry.inViewport).map((entry) => {
     const box = projectedMarkerBox(entry, projection, viewport);
@@ -122,6 +122,8 @@ export function declutterMarkers(entries, projection, viewport) {
     }
     if (!crowded.size) break;
     for (const candidate of crowded) {
+      // Close-up squad badges keep their zoom growth when the viewport changes.
+      if (zoom > 14 && candidate.entry.featureType === "badge") continue;
       candidate.entry.displayScale = candidate.baseScale * (opponents.has(candidate) ? Math.max(0.7, factor) : factor);
     }
   }

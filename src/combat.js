@@ -3,15 +3,16 @@ import { visibilityError } from "./timeline.js";
 export const DEFAULT_GROUP = { id: "group-1", name: "Group 1", color: "#3478d4" };
 export const COMBAT_TYPES = ["firing", "demolish", "booming", "sword", "archer"];
 export const DEFAULT_COMBAT_RANGES = { firing: 1, booming: 10, sword: 0.3, demolish: 0.5, archer: 0.8 };
+export const DEFAULT_COMBAT_DAMAGE = { firing: 1, booming: 3 };
 export const DOMAINS = ["land", "naval", "air"];
-const preset = (speed, health, damage, domain = "land", targets = ["land"]) => ({ speed, range: DEFAULT_COMBAT_RANGES.firing, health, damage, domain, targets, interval: 60, type: "firing" });
+const preset = (speed, health, domain = "land", targets = ["land"]) => ({ speed, range: DEFAULT_COMBAT_RANGES.firing, health, damage: DEFAULT_COMBAT_DAMAGE.firing, domain, targets, interval: 60, type: "firing" });
 export const COMBAT_PRESETS = {
-  infantry: preset(5, 100, 1), tank: preset(35, 1000, 100),
-  "military-truck": preset(60, 150, 0, "land", []), artillery: preset(15, 300, 120, "land", ["land", "naval"]),
-  warship: preset(40, 10000, 500, "naval", DOMAINS), submarine: preset(30, 5000, 400, "naval", ["naval"]),
-  boat: preset(25, 500, 20, "naval", ["naval"]), aircraft: preset(500, 500, 100, "air", DOMAINS),
-  helicopter: preset(200, 400, 80, "air", DOMAINS), fortress: preset(0, 10000, 200),
-  support: preset(15, 150, 0, "land", []),
+  infantry: preset(5, 100), tank: preset(35, 1000),
+  "military-truck": preset(60, 150, "land", []), artillery: preset(15, 300, "land", ["land", "naval"]),
+  warship: preset(40, 10000, "naval", DOMAINS), submarine: preset(30, 5000, "naval", ["naval"]),
+  boat: preset(25, 500, "naval", ["naval"]), aircraft: preset(500, 500, "air", DOMAINS),
+  helicopter: preset(200, 400, "air", DOMAINS), fortress: preset(0, 10000),
+  support: preset(15, 150, "land", []),
 };
 export function defaultCombat(feature) {
   const kind = feature.kind;

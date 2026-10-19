@@ -182,7 +182,11 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
       const position = sample?.position ?? entry.position;
       entry.currentPosition = typeof position.lat === "function" ? position : { lat: position.lat, lng: position.lng };
       entry.isMoving = !force && !!sample?.moving;
-      entry.displayScale = zoomAdjustedScale(sample?.scale ?? entry.scale, zoom, live.current.referenceZoom ?? startView.zoom);
+      const scale = sample?.scale ?? entry.scale;
+      const referenceZoom = live.current.referenceZoom ?? startView.zoom;
+      entry.displayScale = entry.featureType === "badge" && zoom > 14
+        ? zoomAdjustedScale(scale, 14, referenceZoom) * (1 + (zoom - 14) * 0.1)
+        : zoomAdjustedScale(scale, zoom, referenceZoom);
       const range = live.current.animationRange;
       const duration = live.current.animationDuration;
       const effectElapsed = live.current.battleForces && sample?.effectStart != null ? (time - sample.effectStart) / (60 * (live.current.battleSpeed ?? 1)) : sample?.effectStart != null && range && range.end > range.start && duration
@@ -246,7 +250,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         if (target?.visible && target !== entry) target.collisionProtected = true;
       }
     }
-    declutterMarkers([...markers.current.values()], projection, viewport);
+    declutterMarkers([...markers.current.values()], projection, viewport, zoom);
     for (const entry of markers.current.values()) {
       entry.element.style.translate = `${entry.battleOffset}px 0`;
       const rendered = entry.visible && entry.inViewport && !entry.collisionHidden;
