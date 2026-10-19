@@ -1,3 +1,5 @@
+import { visibilityError } from "./timeline.js";
+
 export const DEFAULT_GROUP = { id: "group-1", name: "Group 1", color: "#3478d4" };
 export const COMBAT_TYPES = ["firing", "demolish", "booming", "sword", "archer"];
 export const DEFAULT_COMBAT_RANGES = { firing: 1, booming: 10, sword: 0.3, demolish: 0.5, archer: 0.8 };
@@ -31,8 +33,9 @@ export function normalizeGroups(groups) {
   const ids = new Set();
   return groups.map((group) => {
     if (!group || typeof group.id !== "string" || !group.id || group.id.length > 100 || ids.has(group.id) || typeof group.name !== "string" || !group.name.trim() || group.name.trim().length > 80 || !/^#[0-9a-f]{6}$/i.test(group.color)) throw new Error("A group has an invalid name, color, or identifier.");
+    if (group.paintVisibility !== undefined && visibilityError(group.paintVisibility)) throw new Error(visibilityError(group.paintVisibility));
     ids.add(group.id);
-    return { id: group.id, name: group.name.trim(), color: group.color };
+    return { id: group.id, name: group.name.trim(), color: group.color, ...(group.paintVisibility !== undefined ? { paintVisibility: { showAt: group.paintVisibility.showAt, hideAt: group.paintVisibility.hideAt } } : {}) };
   });
 }
 export function validateOwnership(project) {

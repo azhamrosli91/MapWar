@@ -1,3 +1,4 @@
+import { scenarioTime } from "./timeline.js";
 import { brushDimensions } from "./paint.js";
 
 export function createPaintOverlay(api, onStroke) {
@@ -14,6 +15,7 @@ export function createPaintOverlay(api, onStroke) {
   surface.append(canvas);
   input.append(cursor);
   let strokes = [];
+  let hiddenGroups = new Set();
   let brush = null;
   let active = null;
   let enabled = false;
@@ -69,6 +71,7 @@ export function createPaintOverlay(api, onStroke) {
     for (const group of groups.values()) {
     ctx.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);
     for (const stroke of group) {
+      if (hiddenGroups.has(stroke.groupId)) continue;
       strokeCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
       strokeCtx.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);
       strokeCtx.fillStyle = stroke.tool === "erase" ? "#000" : stroke.color;
@@ -164,6 +167,18 @@ export function createPaintOverlay(api, onStroke) {
   overlay.onRemove = () => { cancelAnimationFrame(frame); surface.remove(); input.remove(); };
   overlay.setMap(api.map);
   return {
+    setTime(time, groups = []) {
+      const next = new Set(groups.filter((group) => {
+        if (time == null) return false;
+        const show = scenarioTime(group.paintVisibility?.showAt);
+        const hide = scenarioTime(group.paintVisibility?.hideAt);
+        return (show !== null && time < show) || (hide !== null && time >= hide);
+      }).map((group) => group.id));
+      if (next.size !== hiddenGroups.size || [...next].some((id) => !hiddenGroups.has(id))) {
+        hiddenGroups = next;
+        scheduleDraw();
+      }
+    },
     setStrokes(value) { strokes = value; scheduleDraw(); },
     setBrush(value, editable) { brush = value; enabled = editable; input.style.pointerEvents = enabled ? "auto" : "none"; cursor.style.display = "none"; if (!enabled) active = null; scheduleDraw(); },
     dispose() { overlay.setMap(null); },

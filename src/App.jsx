@@ -51,6 +51,7 @@ import SymbolPicker from "./SymbolPicker.jsx";
 import UnitEditor from "./UnitEditor.jsx";
 import RouteEditor from "./RouteEditor.jsx";
 import VisibilityEditor from "./VisibilityEditor.jsx";
+import PaintVisibilityEditor from "./PaintVisibilityEditor.jsx";
 import SizePicker from "./SizePicker.jsx";
 import Timeline from "./Timeline.jsx";
 import VideoExportPanel from "./VideoExportPanel.jsx";
@@ -257,7 +258,7 @@ export default function App() {
   const uploadSequence = useRef(0);
   const battle = useBattle(project, setProject, activeGroupId);
   const visibleProject = battle.snapshot ?? project;
-  const range = useMemo(() => battle.mode === "replay" ? replayRange(battle.replay) : timelineRange([...project.badges, ...project.units]), [battle.mode, battle.replay, project.badges, project.units]);
+  const range = useMemo(() => battle.mode === "replay" ? replayRange(battle.replay) : timelineRange([...project.badges, ...project.units], project.groups, project.paintStrokes), [battle.mode, battle.replay, project.badges, project.units, project.groups, project.paintStrokes]);
   const groupItems = (key) => project[key].filter((item) => item.groupId === activeGroupId);
   const filteredCards = (key) => groupItems(key).filter((item) => (key === "badges" ? item.label : item.name).toLowerCase().includes(cardSearch[key].trim().toLowerCase()));
   function chooseGroup(id) {
@@ -1393,6 +1394,7 @@ export default function App() {
               { id: "paint", label: "Paint", icon: Paintbrush, description: "Drag on the map to color an area. Choose a brush size, shape, color, and transparency, or erase painted areas. Paint stays attached to the map as you zoom." },
             ].map(({ id, label, description, icon: Icon }) => <HelpTooltip key={id} label={label} description={description}><button className={section === id ? "active" : ""} aria-label={label} aria-description={description} aria-pressed={section === id} onClick={() => switchSection(id)}><Icon size={19} aria-hidden="true" /></button></HelpTooltip>)}</div>
             {section === "paint" ? <div className="paint-controls">
+              <PaintVisibilityEditor key={activeGroupId} group={project.groups.find((group) => group.id === activeGroupId)} onSave={(paintVisibility) => setProject((current) => ({ ...current, groups: current.groups.map((group) => group.id === activeGroupId ? { ...group, paintVisibility } : group) }))} />
               
               <div className="paint-options" aria-label="Paint tool">{["paint", "erase"].map((tool) => <button key={tool} className={brush.tool === tool ? "active" : ""} onClick={() => setBrush((value) => ({ ...value, tool }))}>{tool === "paint" ? "Paint" : "Eraser"}</button>)}</div>
               <div className="paint-options" aria-label="Brush size">{["small", "medium", "big"].map((size) => <button key={size} className={brush.size === size ? "active" : ""} onClick={() => setBrush((value) => ({ ...value, size }))}>{size[0].toUpperCase() + size.slice(1)}</button>)}</div>

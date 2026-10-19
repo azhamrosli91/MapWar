@@ -99,11 +99,13 @@ export function visibilityError(visibility) {
   return "";
 }
 
-export function timelineRange(badges) {
+export function timelineRange(badges, groups = [], paintStrokes = []) {
   let start = Infinity;
   let end = -Infinity;
   let events = 0;
-  for (const badge of badges) {
+  const paintedGroups = new Set(paintStrokes.map((stroke) => stroke.groupId));
+  const paintEvents = groups.filter((group) => paintedGroups.has(group.id)).map((group) => ({ visibility: group.paintVisibility }));
+  for (const badge of [...badges, ...paintEvents]) {
     if (Array.isArray(badge.route) && badge.route.length >= 1 && !routeError(badge.route)) {
       const firstTime = scenarioTime(badge.route[0].dateTime);
       const lastTime = scenarioTime(badge.route.at(-1).dateTime);

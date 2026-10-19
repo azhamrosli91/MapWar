@@ -94,7 +94,20 @@ export function declutterMarkers(entries, projection, viewport) {
       },
     };
   };
-  // Try progressively smaller sizes before deciding which markers to hide.
+  // Keep both sides of an encounter, even outside active combat playback.
+  const opponents = new Set();
+  const encounterIndex = createIndex();
+  for (const candidate of candidates) {
+    const box = bounds(candidate);
+    for (const other of encounterIndex.overlaps(box)) {
+      if (candidate.entry.groupId && other.entry.groupId && candidate.entry.groupId !== other.entry.groupId) {
+        opponents.add(candidate);
+        opponents.add(other);
+      }
+    }
+    encounterIndex.add(candidate, box);
+  }
+  // Opponents stay readable with a modest reduction; other clutter can shrink further.
   for (const factor of [0.85, 0.7, 0.6, 0.5]) {
     const index = createIndex();
     const crowded = new Set();
@@ -109,16 +122,87 @@ export function declutterMarkers(entries, projection, viewport) {
     }
     if (!crowded.size) break;
     for (const candidate of crowded) {
-      if (!candidate.entry.battleOffset) candidate.entry.displayScale = candidate.baseScale * factor;
+      candidate.entry.displayScale = candidate.baseScale * (opponents.has(candidate) ? Math.max(0.7, factor) : factor);
     }
   }
-  candidates.sort((a, b) => Number(b.entry.collisionProtected) - Number(a.entry.collisionProtected)
+  // Keep one representative where allies still overlap, including during combat.
+  // Selected markers, drafts, and the explicit show-all option remain visible.
+  const groupIndex = createIndex();
+  const grouped = [...candidates].sort((a, b) => Number(!!b.entry.collisionPinned) - Number(!!a.entry.collisionPinned)
+    || Number(opponents.has(b)) - Number(opponents.has(a))
+    || b.baseScale - a.baseScale || b.entry.stars - a.entry.stars || a.entry.id.localeCompare(b.entry.id));
+  for (const candidate of grouped) {
+    if (!candidate.entry.groupId) continue;
+    const box = bounds(candidate);
+    candidate.entry.collisionHidden = !candidate.entry.collisionPinned
+      && [...groupIndex.overlaps(box)].some((other) => other.entry.groupId === candidate.entry.groupId);
+    if (!candidate.entry.collisionHidden) groupIndex.add(candidate, box);
+  }
+  const protectedMarker = (candidate) => opponents.has(candidate) || candidate.entry.collisionProtected || !!candidate.entry.collisionPinned;
+  candidates.sort((a, b) => Number(protectedMarker(b)) - Number(protectedMarker(a))
+    || Number(opponents.has(a)) - Number(opponents.has(b))
     || b.baseScale - a.baseScale || b.entry.stars - a.entry.stars || a.entry.id.localeCompare(b.entry.id));
   const index = createIndex();
   for (const candidate of candidates) {
-    const box = bounds(candidate);
-    candidate.entry.collisionHidden = !candidate.entry.collisionProtected && index.overlaps(box).size > 0;
+    if (candidate.entry.collisionHidden) continue;
+    let box = bounds(candidate);
+    if (opponents.has(candidate) && index.overlaps(box).size) {
+      // Shrinking cannot separate coincident positions. Use the nearest free gap,
+      // preferring the side that keeps the badge inside the current viewport.
+      const originalX = candidate.x;
+      const placements = [-1, 1].map((direction) => {
+        candidate.x = originalX;
+        let shiftedBox = bounds(candidate);
+        let overlaps = index.overlaps(shiftedBox);
+        while (overlaps.size) {
+          const offsets = [...overlaps].map((other) => {
+            const otherBox = bounds(other);
+            return direction < 0 ? otherBox.left - shiftedBox.right - 1 : otherBox.right - shiftedBox.left + 1;
+          });
+          candidate.x += direction < 0 ? Math.min(...offsets) : Math.max(...offsets);
+          shiftedBox = bounds(candidate);
+          overlaps = index.overlaps(shiftedBox);
+        }
+        return { x: candidate.x, overflow: Math.max(0, viewport.left - shiftedBox.left) + Math.max(0, shiftedBox.right - viewport.right) };
+      });
+      placements.sort((a, b) => a.overflow - b.overflow || Math.abs(a.x - originalX) - Math.abs(b.x - originalX));
+      candidate.x = placements[0].x;
+      candidate.entry.battleOffset = (candidate.entry.battleOffset ?? 0) + candidate.x - originalX;
+      box = bounds(candidate);
+    }
+    candidate.entry.collisionHidden = !protectedMarker(candidate) && index.overlaps(box).size > 0;
     if (!candidate.entry.collisionHidden) index.add(candidate, box);
+  }
+}
+
+export function declutterLabels(entries, projection, viewport, map, container) {
+  const occupied = [];
+  // Stable priority keeps the same representative until more screen space opens up.
+  const ranked = [...entries].sort((a, b) => Number(b.labelPinned) - Number(a.labelPinned) || a.id.localeCompare(b.id));
+  for (const entry of ranked) {
+    let visible = entry.labelVisible;
+    if (visible && projection && viewport && container && entry.labelElement) {
+      if (!entry.labelDimensions) {
+        const copy = entry.labelElement.cloneNode(true);
+        container.append(copy);
+        entry.labelDimensions = { width: copy.offsetWidth, height: copy.offsetHeight };
+        copy.remove();
+      }
+      const point = nearestWorldPoint(projection.fromLatLngToDivPixel(entry.label.position), viewport);
+      if (point) {
+        const { width, height } = entry.labelDimensions;
+        // Advanced markers anchor at the bottom center of their content.
+        const box = { left: point.x - width / 2 - 4, right: point.x + width / 2 + 4,
+          top: point.y - height - 4, bottom: point.y + 4 };
+        visible = box.right >= viewport.left && box.left <= viewport.right
+          && box.bottom >= viewport.top && box.top <= viewport.bottom;
+        if (visible && !entry.labelPinned) visible = !occupied.some((other) =>
+          box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top);
+        if (visible) occupied.push(box);
+      }
+    }
+    const target = visible ? map : null;
+    if (entry.label.map !== target) entry.label.map = target;
   }
 }
 

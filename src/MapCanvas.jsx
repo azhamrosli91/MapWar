@@ -6,7 +6,7 @@ import { createEffectOverlay } from "./effects.js";
 import { createCommandOverlay } from "./command-overlay.js";
 import { sampleBattle, remainingPath, normalizeCombat, nearestEnemy } from "./combat.js";
 import { createPaintOverlay } from "./paint-overlay.js";
-import { boxIntersectsViewport, declutterMarkers, mapViewport, measureMarker, projectedMarkerBox } from "./viewport.js";
+import { boxIntersectsViewport, declutterLabels, declutterMarkers, mapViewport, measureMarker, projectedMarkerBox } from "./viewport.js";
 import { HAS_MAP_KEY, MAPS_KEY } from "./maps-config.js";
 import { BADGE_SIZES, MAX_LINE_POINTS, compileRoute, scenarioNightShade, routeError, sampleRoute, scenarioTime, stopLabel } from "./timeline.js";
 
@@ -111,7 +111,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         headingInteractionEnabled: !live.current.renderMode, tiltInteractionEnabled: false,
         clickableIcons: false, streetViewControl: false, fullscreenControl: false,
         disableDefaultUI: live.current.cleanExport || live.current.renderMode,
-        mapTypeControl: false, cameraControl: !live.current.cleanExport && !live.current.renderMode, zoomControl: !live.current.cleanExport && !live.current.renderMode, zoomControlOptions: { position: window.google.maps.ControlPosition.RIGHT_CENTER }, gestureHandling: live.current.renderMode ? "none" : "greedy", keyboardShortcuts: !live.current.cleanExport && !live.current.renderMode,
+        mapTypeControl: false, cameraControl: !live.current.cleanExport && !live.current.renderMode && !live.current.hideNavigationControls, zoomControl: !live.current.cleanExport && !live.current.renderMode && !live.current.hideNavigationControls, zoomControlOptions: { position: window.google.maps.ControlPosition.RIGHT_CENTER }, gestureHandling: live.current.renderMode ? "none" : "greedy", keyboardShortcuts: !live.current.cleanExport && !live.current.renderMode,
       });
       setApi({ map, Polyline, OverlayView, AdvancedMarkerElement, CollisionBehavior, spherical });
       if (!live.current.cleanExport && !live.current.renderMode) {
@@ -163,6 +163,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
     time = live.current.authoringTime ?? time;
     if (live.current.battleForces) time = live.current.battleTime;
     if (live.current.battleReplay && time == null) time = live.current.battleReplay.startAt;
+    paintOverlay.current?.setTime(live.current.preview || live.current.renderMode || live.current.battleReplay ? time : null, live.current.groups);
     previewTime.current = time;
     if (!api) return;
     const battleForces = live.current.battleForces ?? (live.current.battleReplay ? sampleBattle(live.current.battleReplay, time) : null);
@@ -189,7 +190,9 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         : 0;
       entry.sample = sample;
       entry.effectElapsed = effectElapsed;
-      entry.element.classList.toggle("badge-selected", (live.current.selectedIds ?? []).includes(entry.id) || entry.id === live.current.selectedId);
+      const selected = (live.current.selectedIds ?? []).includes(entry.id) || entry.id === live.current.selectedId;
+      entry.element.classList.toggle("badge-selected", selected);
+      entry.collisionPinned = selected || entry.isDraft || live.current.showAllMarkers;
       entry.element.classList.toggle("force-defeated", !!force && force.count === 0 && force.initialCount !== 0);
       entry.element.classList.toggle("force-invalid", !!force?.invalidTerrain);
       entry.collisionProtected = !!force || entry.baseCollisionProtected;
@@ -240,21 +243,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         const duration = travel + (["firing", "booming", "demolish"].includes(effect) ? 3000 : 0);
         if (!entry.sample.autoCombat && !(entry.isMoving && ["firing", "booming"].includes(effect)) && entry.effectElapsed >= duration) continue;
         entry.collisionProtected = true;
-        if (!target?.visible || target === entry) continue;
-        target.collisionProtected = true;
-        const sourceBox = projectedMarkerBox(entry, projection, viewport);
-        const targetBox = projectedMarkerBox(target, projection, viewport);
-        if (!sourceBox || !targetBox) continue;
-        if (Math.abs(sourceBox.y - targetBox.y) < (sourceBox.height + targetBox.height) / 2 + 24) {
-          const gap = (sourceBox.width + targetBox.width) / 2 + 48;
-          const separation = targetBox.x - sourceBox.x;
-          if (Math.abs(separation) < gap && !entry.battleOffset && !target.battleOffset) {
-            const direction = separation === 0 ? (entry.id < target.id ? 1 : -1) : Math.sign(separation);
-            const offset = (gap - Math.abs(separation)) / 2;
-            entry.battleOffset = -direction * offset;
-            target.battleOffset = direction * offset;
-          }
-        }
+        if (target?.visible && target !== entry) target.collisionProtected = true;
       }
     }
     declutterMarkers([...markers.current.values()], projection, viewport);
@@ -283,6 +272,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
       if (entry.marker.zIndex !== zIndex) entry.marker.zIndex = zIndex;
     });
     effectOverlay.current?.update(markers.current, scenarioNightShade(time));
+    declutterLabels([...lineEntries.current.values()], projection, viewport, api.map, markerMeasurements.current);
     for (const entry of routeGuides.current.values()) {
       const visible = time == null || ((entry.showTime == null || time >= entry.showTime) && (entry.hideTime == null || time < entry.hideTime));
       if (entry.visible !== visible) { entry.line.setVisible(visible); entry.visible = visible; }
@@ -303,6 +293,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
     if (!api) return;
     const overlay = createPaintOverlay(api, (stroke) => { if (!live.current.readOnly) live.current.onPaintStroke?.(stroke); });
     paintOverlay.current = overlay;
+    overlay.setTime(live.current.preview ? previewTime.current ?? live.current.previewTime : null, live.current.groups);
     return () => { paintOverlay.current = null; overlay.dispose(); };
   }, [api]);
 
@@ -337,6 +328,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
     document.fonts.ready.then(() => {
       if (disposed) return;
       for (const entry of markers.current.values()) entry.dimensions = null;
+      for (const entry of lineEntries.current.values()) entry.labelDimensions = null;
       refresh();
     });
     refresh();
@@ -537,6 +529,8 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         entry.syncing = false;
       }
       const active = feature.id === lineDraft?.id;
+      entry.id = feature.id;
+      entry.labelPinned = active;
       const textOnly = feature.kind === "text";
       const showLine = !textOnly && feature.showLine !== false;
       const labelPath = feature.shape === "curve" ? curvedLinePath(feature.path) : feature.path;
@@ -556,8 +550,10 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         element.style.backgroundColor = feature.labelBackground ?? "transparent";
         if (feature.labelBackground && feature.labelBackground !== "transparent") element.style.textShadow = "none";
         entry.label.replaceChildren(element);
+        entry.labelElement = element;
+        entry.labelDimensions = null;
       }
-      entry.label.map = before && (feature.showLabel ?? textOnly) ? api.map : null;
+      entry.labelVisible = !!before && (feature.showLabel ?? textOnly);
       entry.label.title = feature.name;
       entry.label.gmpClickable = !preview && mode === "navigate";
       entry.label.gmpDraggable = !preview && active && textOnly && mode === "editLine";
@@ -576,7 +572,8 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
       entry.line.setOptions({ ...options, editable: editable && !curved, strokeOpacity: curved ? 0 : options.strokeOpacity, icons: curved ? [] : icons, visible: showLine && (!curved || editable), zIndex: active ? 31 : 20 });
       entry.rendered.setOptions({ ...options, path: curved ? curvedLinePath(feature.path) : [], visible: showLine && curved });
     }
-  }, [api, lines, lineDraft, mode, preview, lineColor]);
+    drawPreview(previewTime.current);
+  }, [api, lines, lineDraft, mode, preview, lineColor, drawPreview]);
 
   useEffect(() => {
     if (!api || preview || mode !== "drawLine" || !lineDraft?.path.length || lineDraft.kind === "text" || lineDraft.showLine === false || lineDraft.path.length >= MAX_LINE_POINTS) return;
@@ -731,6 +728,11 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
     api?.map.setOptions({ draggableCursor: !preview && (pointModes.includes(mode) || mode === "paint") ? "crosshair" : null, draggable: preview || mode !== "paint", disableDoubleClickZoom: !preview && (pointModes.includes(mode) || mode === "paint") });
   }, [api, mode, preview]);
 
+  useEffect(() => {
+    const showNavigation = !props.hideNavigationControls && !props.cleanExport && !props.renderMode;
+    api?.map.setOptions({ cameraControl: showNavigation, zoomControl: showNavigation });
+  }, [api, props.hideNavigationControls, props.cleanExport, props.renderMode]);
+
   useImperativeHandle(ref, () => ({
     previewAt: drawPreview,
     sampleFeature(feature, time) {
@@ -748,8 +750,9 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         points.forEach(({ lat, lng }) => bounds.extend({ lat, lng }));
         const timeline = host.current?.closest(".map-stage")?.querySelector(".timeline");
         const previewControls = host.current?.closest(".map-stage")?.querySelector(".preview-map-controls");
-        const top = previewControls ? previewControls.offsetTop + previewControls.offsetHeight + 16 : timeline ? timeline.offsetTop + timeline.offsetHeight + 16 : 80;
-        const bottom = previewControls && timeline ? api.map.getDiv().clientHeight - timeline.offsetTop + 16 : 60;
+        const controlsOverlayMap = previewControls && previewControls.getBoundingClientRect().bottom > api.map.getDiv().getBoundingClientRect().top;
+        const top = controlsOverlayMap ? previewControls.offsetTop + previewControls.offsetHeight + 16 : !previewControls && timeline ? timeline.offsetTop + timeline.offsetHeight + 16 : 80;
+        const bottom = controlsOverlayMap && timeline ? Math.max(60, api.map.getDiv().clientHeight - timeline.offsetTop + 16) : 60;
         api.map.fitBounds(bounds, { top, bottom, left: 50, right: 70 });
       }
     },
