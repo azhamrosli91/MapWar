@@ -28,7 +28,7 @@ export default function VideoExportNotifications({ exports }) {
 
   return <section className="video-export-notifications" aria-label="Video export progress">
     <div className="video-progress-heading"><Film size={18} /><strong>Video exports</strong><button className="icon-button" onClick={() => setVisible(false)} aria-label="Hide video progress"><X size={17} /></button></div>
-    <p className="video-background-hint">You can keep editing while your videos render.</p>
+    
     <div className="video-progress-list">{jobs.map((job) => {
       const active = ["submitting", "queued", "rendering", "finishing"].includes(job.status);
       const file = job.status === "completed" ? `/api/video/jobs/${job.id}/file` : null;

@@ -44,7 +44,7 @@ export function projectedMarkerBox(entry, projection, viewport) {
   const scale = entry.displayScale ?? entry.scale;
   const width = entry.dimensions.width * scale;
   const height = entry.dimensions.height * scale;
-  return { x: point.x, y: point.y - height / 2, width, height };
+  return { x: point.x + (entry.battleOffset ?? 0), y: point.y - height / 2, width, height };
 }
 
 export function boxIntersectsViewport(box, viewport, padding = 0) {
@@ -108,7 +108,9 @@ export function declutterMarkers(entries, projection, viewport) {
       index.add(candidate, box);
     }
     if (!crowded.size) break;
-    for (const candidate of crowded) candidate.entry.displayScale = candidate.baseScale * factor;
+    for (const candidate of crowded) {
+      if (!candidate.entry.battleOffset) candidate.entry.displayScale = candidate.baseScale * factor;
+    }
   }
   candidates.sort((a, b) => Number(b.entry.collisionProtected) - Number(a.entry.collisionProtected)
     || b.baseScale - a.baseScale || b.entry.stars - a.entry.stars || a.entry.id.localeCompare(b.entry.id));

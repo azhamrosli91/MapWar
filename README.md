@@ -51,6 +51,16 @@ References: [API key setup](https://developers.google.com/maps/documentation/jav
 
 Browser storage is local: changing browser, hostname, or port opens a separate workspace. Clearing site data removes locally saved maps. Private browsing or storage limits can prevent saving; the app reports this and you can export an in-memory backup. If existing data cannot be read, automatic saving remains paused until the issue is resolved and the page is reloaded, to avoid overwriting it. Multiple open tabs do not synchronize; use one editing tab per workspace.
 
+## Share view-only previews
+
+Set `PREVIEW_ADMIN_KEY` to a private publishing key in `.env.local` (local use) or `.env` (Docker Compose), then restart the app. This is a server setting: do not add a `VITE_` prefix. Without a key, existing previews remain public and publishing/removal are disabled.
+
+Import or prepare a map in the editor, save or cancel any active feature edits, then open **Preview library** from the map actions. On mobile, use the map actions menu. Enter the key and a preview title, then choose **Publish current map**. Every publication is a separate fixed copy with its own link; subsequent editor changes do not update it. Use **Open preview** or **Copy link** to share it. An admin can remove a publication from this library, which makes its shared link unavailable.
+
+Open `/preview` to choose from the newest published maps, or `/preview?id=…` for a specific publication. Visitors can pan, zoom, rotate, change map type, use fullscreen, and control playback. They cannot edit features or issue battle orders. Recorded battles, when included in a project, are available in the playback selector. Links open at the published camera position and the start of playback, paused. Preview browsing does not read or replace the editor's locally saved map.
+
+Publications are stored in `data/previews` by default; set `PREVIEW_STORAGE_DIR` to use another location. Docker Compose keeps them in the persistent `preview-data` volume across restarts and rebuilds. Back up that directory or volume to preserve publications. Anyone with access to the website can view the published dropdown and its maps.
+
 ## Draw lines
 
 Open **Lines → Draw line** and click successive locations. **Undo last point** removes the latest point; **Finish** ends drawing so you can adjust handles, then **Save line** stores it. **Cancel** discards the draft. Lines appear red in Map view and white in Satellite view, including in video exports. Select solid or dashed lines with thin (3 px), medium (6 px), or thick (10 px) width.

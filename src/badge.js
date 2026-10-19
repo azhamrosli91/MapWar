@@ -24,7 +24,7 @@ export function unitImage(unit) {
 export function unitKindLabel(kind) {
   return kind === "troop" ? "Troops / Infantry" : kind === "other" ? "Uploaded image" : BADGE_SYMBOLS.find((symbol) => symbol.value === kind)?.label ?? kind;
 }
-export const effectSymbols = { booming: "✹", demolish: "▥", kills: "☠", crack: "ϟ", surrender: "🏳️" };
+export const effectSymbols = { sword: "⚔", archer: "➶", booming: "✹", demolish: "▥", kills: "☠", crack: "ϟ", surrender: "🏳️" };
 
 export const DEFAULT_BADGE_SYMBOL = "helmet";
 
@@ -109,7 +109,10 @@ export function unitElement(unit, selected = false, draft = false) {
   const effect = document.createElement("span");
   effect.className = "feature-effect";
   effect.setAttribute("aria-hidden", "true");
-  box.append(icon, label, effect);
+  const count = document.createElement("span");
+  count.className = "badge-troop-count equipment-quantity";
+  box.append(icon, label, count, effect);
+  setBadgeTroopCount(box, unit.quantity ?? 1);
   return box;
 }
 
@@ -170,9 +173,10 @@ export function setFeatureEffect(element, effect, elapsedMs = 0, repeatWhileMovi
 export function setBadgeTroopCount(element, troopCount) {
   const count = element.querySelector(".badge-troop-count");
   if (!count) return;
-  const text = troopCount > 0 ? String(troopCount) : "";
+  const equipment = count.classList.contains("equipment-quantity");
+  const text = equipment ? `×${troopCount}` : troopCount > 0 ? String(troopCount) : "";
   if (count.textContent !== text) {
     count.textContent = text;
-    count.setAttribute("aria-label", `${troopCount} troops`);
+    count.setAttribute("aria-label", `${troopCount} ${equipment ? "equipment items" : "troops"}`);
   }
 }

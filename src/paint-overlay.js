@@ -6,6 +6,7 @@ export function createPaintOverlay(api, onStroke) {
   surface.className = "paint-overlay";
   const canvas = document.createElement("canvas");
   const strokeCanvas = document.createElement("canvas");
+  const groupCanvas = document.createElement("canvas");
   const input = document.createElement("div");
   input.className = "paint-input";
   const cursor = document.createElement("div");
@@ -55,12 +56,19 @@ export function createPaintOverlay(api, onStroke) {
     frame = 0;
     if (!resize()) return;
     const projection = overlay.getProjection();
-    const ctx = canvas.getContext("2d");
     const ratio = window.devicePixelRatio || 1;
+    const output = canvas.getContext("2d");
+    groupCanvas.width = canvas.width; groupCanvas.height = canvas.height;
+    const ctx = groupCanvas.getContext("2d");
+    output.setTransform(ratio, 0, 0, ratio, 0, 0);
+    output.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);
     const strokeCtx = strokeCanvas.getContext("2d");
-    for (const stroke of [...strokes, ...(active ? [active] : [])]) {
+    const groups = Map.groupBy([...strokes, ...(active ? [active] : [])], (stroke) => stroke.groupId ?? "group-1");
+    for (const group of groups.values()) {
+    ctx.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);
+    for (const stroke of group) {
       strokeCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
       strokeCtx.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);
       strokeCtx.fillStyle = stroke.tool === "erase" ? "#000" : stroke.color;
@@ -90,6 +98,8 @@ export function createPaintOverlay(api, onStroke) {
     }
     ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = 1;
+    output.drawImage(groupCanvas, 0, 0, canvas.width / ratio, canvas.height / ratio);
+    }
   }
 
   function scheduleDraw() { if (!frame) frame = requestAnimationFrame(draw); }
@@ -120,7 +130,7 @@ export function createPaintOverlay(api, onStroke) {
     event.preventDefault();
     input.setPointerCapture(event.pointerId);
     const { width, height } = brushDimensions(brush.shape, brush.size);
-    active = { id: crypto.randomUUID(), tool: brush.tool, shape: brush.shape, color: brush.color, opacity: brush.opacity, width, height, zoom: api.map.getZoom(), points: [point] };
+    active = { id: crypto.randomUUID(), groupId: brush.groupId, tool: brush.tool, shape: brush.shape, color: brush.color, opacity: brush.opacity, width, height, zoom: api.map.getZoom(), points: [point] };
     moveCursor(event);
     scheduleDraw();
   }

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { TARGET_EFFECTS, formatScenarioTime, nextHour } from "./timeline.js";
 import SizePicker from "./SizePicker.jsx";
+import { BADGE_FORMATIONS } from "./timeline.js";
 
 export default function MapFeatureControls({ menu, session, targets = [], error, onDismiss, onEdit, onMovement, onChange, onStart, onSave, onCancel, onFullEditor, onEffect }) {
   const panel = useRef(null);
@@ -96,9 +97,9 @@ export default function MapFeatureControls({ menu, session, targets = [], error,
       <h3>{ui === "start" ? "Start edit movement" : "Edit base settings"}</h3>
       {ui === "start" ? <label className="field-label">Starting scenario date and time<input type="datetime-local" min="0001-01-01T00:00" max="9999-12-31T23:59" step="60" required value={session.dateTime} onChange={(event) => onChange({ dateTime: event.target.value })} /></label> : <>
         <label className="field-label">{session.featureType === "badge" ? "Label" : "Name"}<input required maxLength={80} value={name} onChange={(event) => onChange({ [session.featureType === "badge" ? "label" : "name"]: event.target.value })} /></label>
-        <SizePicker label={session.featureType === "badge" ? "Badge size" : "Equipment size"} value={session.feature.size} onChange={(size) => onChange({ size })} />
+        <SizePicker formation={session.featureType === "badge"} label={session.featureType === "badge" ? "Badge size" : "Equipment size"} value={session.feature.size} onChange={(size) => onChange({ size, ...(session.featureType === "badge" ? { troopCount: BADGE_FORMATIONS[size].troops } : {}) })} />
         {session.featureType === "badge" && <label className="field-label">Troop count<input type="number" required min="0" max={Number.MAX_SAFE_INTEGER} step="1" value={session.feature.troopCount ?? 0} onChange={(event) => onChange({ troopCount: event.target.value === "" ? "" : Number(event.target.value) })} /></label>}
-        <p className="field-hint">Base settings apply across the timeline. Dated effects and other settings are in the full editor.</p>
+        
       </>}
       {message}
       <div className="map-feature-actions"><button className="primary" type="submit">{ui === "start" ? "Start movement" : "Save"}</button><button className="secondary" type="button" onClick={onCancel}>Cancel</button>{ui === "edit" && <button className="secondary" type="button" onClick={onFullEditor}>Full editor</button>}</div>

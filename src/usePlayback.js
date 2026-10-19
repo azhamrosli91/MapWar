@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+const BASE_PLAYBACK_RATE = 0.25;
+
 export default function usePlayback(mapRef, range, duration) {
   const [preview, setPreview] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState(1);
   const [cursor, setCursor] = useState(null);
   const clock = useRef(null);
   const start = range?.start;
@@ -46,7 +49,7 @@ export default function usePlayback(mapRef, range, duration) {
       // effect's start when rendering was expensive. Never run time backwards.
       const delta = Math.max(0, now - previous);
       previous = Math.max(previous, now);
-      clock.current = Math.min(end, (clock.current ?? start) + delta * (end - start) / (duration * 1000));
+      clock.current = Math.min(end, (clock.current ?? start) + delta * BASE_PLAYBACK_RATE * speed * (end - start) / (duration * 1000));
       mapRef.current?.previewAt(clock.current);
       if (now - lastPaint >= 80 || clock.current === end) {
         setCursor(clock.current);
@@ -57,7 +60,7 @@ export default function usePlayback(mapRef, range, duration) {
     }
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [playing, start, end, duration, mapRef]);
+  }, [playing, start, end, duration, speed, mapRef]);
 
   useEffect(() => {
     const pauseWhenHidden = () => {
@@ -75,5 +78,5 @@ export default function usePlayback(mapRef, range, duration) {
     setCursor(clock.current);
   }
 
-  return { preview, playing, cursor: cursor ?? start, getTime: () => clock.current, play, pause, restart, seek, edit };
+  return { preview, playing, speed, setSpeed, cursor: cursor ?? start, getTime: () => clock.current, play, pause, restart, seek, edit };
 }

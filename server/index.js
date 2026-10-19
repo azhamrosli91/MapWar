@@ -6,14 +6,21 @@ import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { loadEnvFile } from "node:process";
 import { chromium } from "playwright";
 import ffmpegPath from "ffmpeg-static";
 import { routeError, timelineRange, visibilityError } from "../src/timeline.js";
 import { validatePaintStrokes } from "../src/paint.js";
+import { validateOwnership, validateBattles, replayRange } from "../src/combat.js";
 import { UNIT_KINDS } from "../src/symbols.js";
 import { MAX_RECORDING_FRAMES, VIDEO_FPS, VIDEO_REQUEST_LIMIT } from "../src/video.js";
+import { previewApi } from "./previews.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+// Existing process settings take precedence; local settings override .env defaults.
+for (const name of [".env.local", ".env"]) {
+  if (existsSync(join(root, name))) loadEnvFile(join(root, name));
+}
 const outputDir = join(tmpdir(), `malaya-world-war-ii-video-${process.pid}`);
 mkdirSync(outputDir, { recursive: true });
 const dev = process.argv.includes("--dev");
@@ -29,6 +36,13 @@ let active = null;
 let imageCaptureActive = false;
 let vite;
 
+const handlePreviews = previewApi({
+  directory: resolve(root, process.env.PREVIEW_STORAGE_DIR || "data/previews"),
+  adminKey: process.env.PREVIEW_ADMIN_KEY,
+  reply,
+  readJson,
+});
+
 function reply(res, status, data) {
   res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   res.end(JSON.stringify(data));
@@ -39,16 +53,16 @@ function viewOf(job) {
 }
 
 async function readJson(req, limit = 25 * 1024 * 1024) {
-  if (!req.headers["content-type"]?.startsWith("application/json")) throw new Error("Send JSON export settings.");
+  if (!req.headers["content-type"]?.startsWith("application/json")) throw new Error("Send JSON data.");
   let size = 0;
   const chunks = [];
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > limit) throw new Error(`The export exceeds the ${limit / 1024 / 1024} MB request limit.`);
+    if (size > limit) throw Object.assign(new Error(`The request exceeds the ${limit / 1024 / 1024} MB limit.`), { statusCode: 413 });
     chunks.push(chunk);
   }
   try { return JSON.parse(Buffer.concat(chunks).toString("utf8")); }
-  catch { throw new Error("The export settings are invalid JSON."); }
+  catch { throw new Error("The request contains invalid JSON."); }
 }
 
 function point(value) {
@@ -63,8 +77,10 @@ function validVideoView(view) {
 
 function validate(input) {
   const project = input?.project;
-  if (!project || project.version !== 6 || !Array.isArray(project.badges) || project.badges.length > 500 || !Array.isArray(project.units) || project.units.length > 500 || !Array.isArray(project.lines) || project.lines.length > 200) throw new Error("Choose a valid Malaya World War II map with at most 500 badges, 500 symbols, and 200 lines.");
+  if (!project || ![6, 7].includes(project.version) || !Array.isArray(project.badges) || project.badges.length > 500 || !Array.isArray(project.units) || project.units.length > 500 || !Array.isArray(project.lines) || project.lines.length > 200) throw new Error("Choose a valid Malaya World War II map with at most 500 badges, 500 symbols, and 200 lines.");
   validatePaintStrokes(project.paintStrokes);
+  if (project.version === 7) { validateOwnership(project); validateBattles(project); }
+  if (input.battleReplayId && !project.battles?.some((replay) => replay.id === input.battleReplayId)) throw new Error("The selected battle replay does not exist.");
   if (Buffer.byteLength(JSON.stringify(project)) > 24 * 1024 * 1024) throw new Error("The map exceeds the 24 MB project limit.");
   for (const badge of project.badges) {
     if (!badge || !point(badge) || typeof badge.label !== "string" || badge.label.length > 80 || !["S", "M", "L", "XL"].includes(badge.size) || (badge.troopCount != null && (!Number.isSafeInteger(badge.troopCount) || badge.troopCount < 0)) || !Number.isInteger(badge.stars) || badge.stars < 0 || badge.stars > 5 || typeof badge.flag !== "string" || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(badge.flag) || badge.flag.length > 7_000_000 || (badge.symbolImage && (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(badge.symbolImage) || badge.symbolImage.length > 7_000_000)) || routeError(badge.route) || visibilityError(badge.visibility)) throw new Error("A badge, route, or visibility date is invalid.");
@@ -73,9 +89,9 @@ function validate(input) {
     if (!unit || !point(unit) || typeof unit.name !== "string" || !unit.name.trim() || unit.name.length > 80 || !UNIT_KINDS.includes(unit.kind) || !["S", "M", "L", "XL"].includes(unit.size) || typeof unit.showTrail !== "boolean" || (unit.image && (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(unit.image) || unit.image.length > 7_000_000)) || routeError(unit.route) || visibilityError(unit.visibility)) throw new Error("A movable symbol, route, or visibility date is invalid.");
   }
   for (const line of project.lines) {
-    if (!line || !Array.isArray(line.path) || line.path.length < 2 || line.path.length > 2000 || line.path.some((position) => !point(position)) || !["solid", "dashed"].includes(line.style) || ![3, 6, 10].includes(line.width)) throw new Error("A drawn line is invalid.");
+    if (!line || !Array.isArray(line.path) || line.path.length < (line.kind === "text" ? 1 : 2) || line.path.length > 2000 || line.path.some((position) => !point(position)) || !["solid", "dashed"].includes(line.style) || ![3, 6, 10].includes(line.width)) throw new Error("A drawn line is invalid.");
   }
-  const range = timelineRange([...project.badges, ...project.units]);
+  const range = input.battleReplayId ? replayRange(project.battles.find((replay) => replay.id === input.battleReplayId)) : timelineRange([...project.badges, ...project.units]);
   if (input.recording == null && !range) throw new Error("Add a dated movement route or visibility date before exporting a fixed-view video.");
   const { orientation, logicalSize, view, duration, showDate } = input;
   const ratio = orientation === "portrait" ? [9, 16] : orientation === "landscape" ? [16, 9] : null;
@@ -97,8 +113,10 @@ function validate(input) {
 
 function validateImageInput(input) {
   const project = input?.project;
-  if (!project || project.version !== 6 || !Array.isArray(project.badges) || project.badges.length > 500 || !Array.isArray(project.units) || project.units.length > 500 || !Array.isArray(project.lines) || project.lines.length > 200) throw new Error("Choose a valid Malaya World War II map with at most 500 badges, 500 symbols, and 200 lines.");
+  if (!project || ![6, 7].includes(project.version) || !Array.isArray(project.badges) || project.badges.length > 500 || !Array.isArray(project.units) || project.units.length > 500 || !Array.isArray(project.lines) || project.lines.length > 200) throw new Error("Choose a valid Malaya World War II map with at most 500 badges, 500 symbols, and 200 lines.");
   validatePaintStrokes(project.paintStrokes);
+  if (project.version === 7) { validateOwnership(project); validateBattles(project); }
+  if (input.battleReplayId && !project.battles?.some((replay) => replay.id === input.battleReplayId)) throw new Error("The selected battle replay does not exist.");
   if (Buffer.byteLength(JSON.stringify(project)) > 24 * 1024 * 1024) throw new Error("The map exceeds the 24 MB project limit.");
   const { view, logicalSize, scale, previewTime } = input;
   if (!view || !point(view.center) || !Number.isFinite(view.zoom) || view.zoom < 0 || view.zoom > 22 || !["roadmap", "satellite", "hybrid", "terrain"].includes(view.mapTypeId)) throw new Error("Choose a valid map view.");
@@ -169,7 +187,7 @@ async function render(job) {
   const input = job.input;
   const format = input.orientation === "portrait" ? { width: 1080, height: 1920 } : { width: 1920, height: 1080 };
   const scale = format.width / input.logicalSize.width;
-  const range = timelineRange([...input.project.badges, ...input.project.units]);
+  const range = input.battleReplayId ? replayRange(input.project.battles.find((replay) => replay.id === input.battleReplayId)) : timelineRange([...input.project.badges, ...input.project.units]);
   const frames = input.recording?.frames.length ?? input.duration * VIDEO_FPS;
   const origin = renderOrigin;
   let browser;
@@ -257,8 +275,9 @@ async function handleApi(req, res, path) {
     let origin;
     try { origin = new URL(req.headers.origin); }
     catch { return reply(res, 403, { error: "Invalid request origin." }); }
-    if (origin.host !== req.headers.host) return reply(res, 403, { error: "Only this app can start a render." });
+    if (origin.host !== req.headers.host) return reply(res, 403, { error: "Only this app can make this request." });
   }
+  if (await handlePreviews(req, res, path)) return;
   if (path === "/api/map/image" && req.method === "POST") {
     if (active || queue.length || imageCaptureActive) return reply(res, 429, { error: "Wait for the current export to finish before downloading a picture." });
     let input;
@@ -316,7 +335,7 @@ async function handleApi(req, res, path) {
   return reply(res, 405, { error: "Method not allowed." });
 }
 
-const mime = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon" };
+const mime = { ".gz": "application/octet-stream", ".json": "application/json", ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon" };
 const server = createServer(async (req, res) => {
   try {
     const requestHost = req.headers.host ?? "";

@@ -3,6 +3,8 @@ import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
 import { badgeElement, setBadgeTroopCount, setFeatureEffect, unitElement } from "./badge.js";
 import { coordinates } from "./data.js";
 import { createEffectOverlay } from "./effects.js";
+import { createCommandOverlay } from "./command-overlay.js";
+import { sampleBattle, remainingPath, normalizeCombat, nearestEnemy } from "./combat.js";
 import { createPaintOverlay } from "./paint-overlay.js";
 import { boxIntersectsViewport, declutterMarkers, mapViewport, measureMarker, projectedMarkerBox } from "./viewport.js";
 import { HAS_MAP_KEY, MAPS_KEY } from "./maps-config.js";
@@ -60,6 +62,11 @@ function zoomAdjustedScale(scale, zoom, referenceZoom) {
 }
 
 const MapCanvas = forwardRef(function MapCanvas(props, ref) {
+  if (props.readOnly) {
+    props = { ...props, mode: "view", draft: null, unitDraft: null, lineDraft: null,
+      selectedId: null, selectedIds: undefined, brush: undefined, authoringTime: undefined,
+      battleForces: undefined, onFeatureContextMenu: undefined, onEffectTargetSelect: undefined };
+  }
   const { initialView, badges, units = [], draft, unitDraft, targetLocationStopId, selectedId, mode, preview, playing = false, previewTime: initialPreviewTime, authoringTime, lines, lineDraft, paintStrokes = [], brush, showAllMarkers = false } = props;
   const host = useRef(null);
   const live = useRef(props);
@@ -107,10 +114,23 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         mapTypeControl: false, cameraControl: !live.current.cleanExport && !live.current.renderMode, zoomControl: !live.current.cleanExport && !live.current.renderMode, zoomControlOptions: { position: window.google.maps.ControlPosition.RIGHT_CENTER }, gestureHandling: live.current.renderMode ? "none" : "greedy", keyboardShortcuts: !live.current.cleanExport && !live.current.renderMode,
       });
       setApi({ map, Polyline, OverlayView, AdvancedMarkerElement, CollisionBehavior, spherical });
+      if (!live.current.cleanExport && !live.current.renderMode) {
+        const zoomLevel = document.createElement("div");
+        zoomLevel.className = "map-zoom-level";
+        zoomLevel.index = 1;
+        const updateZoomLevel = () => {
+          const zoom = map.getZoom() ?? startView.zoom;
+          zoomLevel.textContent = `Zoom ${Number(zoom.toFixed(1))}`;
+          zoomLevel.setAttribute("aria-label", `Current zoom level: ${Number(zoom.toFixed(1))}`);
+        };
+        updateZoomLevel();
+        map.controls[window.google.maps.ControlPosition.RIGHT_CENTER].push(zoomLevel);
+        listeners.push(map.addListener("zoom_changed", updateZoomLevel));
+      }
       setMapTypeId(map.getMapTypeId());
       listeners.push(map.addListener("maptypeid_changed", () => setMapTypeId(map.getMapTypeId())));
       listeners.push(map.addListener("click", (event) => {
-        if (!live.current.preview && pointModes.includes(live.current.mode) && event.latLng) live.current.onPoint(event.latLng.toJSON());
+        if (!live.current.readOnly && !live.current.preview && pointModes.includes(live.current.mode) && event.latLng) live.current.onPoint(event.latLng.toJSON());
       }));
       listeners.push(map.addListener("idle", () => {
         const view = cameraView(map);
@@ -141,33 +161,105 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
 
   const drawPreview = useCallback((time) => {
     time = live.current.authoringTime ?? time;
+    if (live.current.battleForces) time = live.current.battleTime;
+    if (live.current.battleReplay && time == null) time = live.current.battleReplay.startAt;
     previewTime.current = time;
     if (!api) return;
+    const battleForces = live.current.battleForces ?? (live.current.battleReplay ? sampleBattle(live.current.battleReplay, time) : null);
+    const forceMap = battleForces ? new Map(battleForces.map((force) => [force.id, force])) : null;
     const projection = effectOverlay.current?.getProjection();
     const viewport = mapViewport(projection, api.map);
     const zoom = api.map.getZoom() ?? startView.zoom;
     for (const entry of markers.current.values()) {
-      const visible = time == null || ((entry.showTime == null || time >= entry.showTime) && (entry.hideTime == null || time < entry.hideTime));
+      const force = forceMap?.get(entry.id);
+      const visible = force ? force.visible : time == null || ((entry.showTime == null || time >= entry.showTime) && (entry.hideTime == null || time < entry.hideTime));
       entry.visible = visible;
       entry.collisionHidden = false;
-      const sample = time == null ? null : sampleRoute(entry.route, time, api.spherical.interpolate);
+      entry.battleOffset = 0;
+      const shot = force?.shot;
+      const sample = force ? { position: { lat: force.lat, lng: force.lng }, troopCount: force.count, quantity: force.count, scale: entry.scale, effect: shot ? "firing" : "none", effectStart: shot?.at, firingTargetId: shot?.targetId, moving: !!force.move } : time == null ? null : sampleRoute(entry.route, time, api.spherical.interpolate);
       const position = sample?.position ?? entry.position;
       entry.currentPosition = typeof position.lat === "function" ? position : { lat: position.lat, lng: position.lng };
-      entry.isMoving = !!sample?.moving;
+      entry.isMoving = !force && !!sample?.moving;
       entry.displayScale = zoomAdjustedScale(sample?.scale ?? entry.scale, zoom, live.current.referenceZoom ?? startView.zoom);
       const range = live.current.animationRange;
       const duration = live.current.animationDuration;
-      const effectElapsed = sample?.effectStart != null && range && range.end > range.start && duration
+      const effectElapsed = live.current.battleForces && sample?.effectStart != null ? (time - sample.effectStart) / (60 * (live.current.battleSpeed ?? 1)) : sample?.effectStart != null && range && range.end > range.start && duration
         ? (time - sample.effectStart) / (range.end - range.start) * duration * 1000
         : 0;
       entry.sample = sample;
       entry.effectElapsed = effectElapsed;
+      entry.element.classList.toggle("badge-selected", (live.current.selectedIds ?? []).includes(entry.id) || entry.id === live.current.selectedId);
+      entry.element.classList.toggle("force-defeated", !!force && force.count === 0 && force.initialCount !== 0);
+      entry.element.classList.toggle("force-invalid", !!force?.invalidTerrain);
+      entry.collisionProtected = !!force || entry.baseCollisionProtected;
       if (visible) measureMarker(entry, markerMeasurements.current);
       const box = viewport ? projectedMarkerBox(entry, projection, viewport) : null;
       entry.inViewport = !box || boxIntersectsViewport(box, viewport, entry.dimensions.padding * entry.displayScale);
     }
+    // Resolve enemies only after every route has been sampled at the same scenario time.
+    if (time != null && !forceMap) {
+      const forces = [...markers.current.values()].filter((entry) => entry.visible && !entry.isDraft).map((entry) => {
+        const position = entry.currentPosition;
+        const count = entry.sample?.troopCount ?? entry.troopCount;
+        // A badge without troop numbers still represents a force in visual playback.
+        // Preserve zero after any positive route count so defeated forces stay inactive.
+        const unnumbered = entry.featureType === "badge" && entry.troopCount === 0
+          && !entry.route.some((stop) => stop.troopCount > 0);
+        return { id: entry.id, groupId: entry.groupId, combat: entry.combat, visibility: entry.visibility,
+          count: unnumbered ? 1 : count,
+          lat: typeof position.lat === "function" ? position.lat() : Number(position.lat),
+          lng: typeof position.lng === "function" ? position.lng() : Number(position.lng), entry };
+      });
+      const range = live.current.animationRange;
+      const origin = range?.start ?? time;
+      const timeScale = range && range.end > range.start && live.current.animationDuration
+        ? live.current.animationDuration * 1000 / (range.end - range.start) : 1;
+      for (const source of forces) {
+        const entry = source.entry;
+        // Explicit route effects retain their selected targets and timing.
+        if (entry.sample?.effect && entry.sample.effect !== "none") continue;
+        const target = nearestEnemy(source, forces, time);
+        if (!target) continue;
+        entry.collisionProtected = true;
+        target.entry.collisionProtected = true;
+        const interval = source.combat.interval * 1000;
+        entry.sample = { ...entry.sample, effect: source.combat.type, firingTargetId: target.id,
+          effectStart: origin, autoCombat: true,
+          combatPhase: Math.max(0, time - origin) % interval / interval,
+          firingIntervalMs: interval * timeScale };
+        entry.effectElapsed = Math.max(0, time - origin) * timeScale;
+      }
+    }
+    if (zoom <= 10.7 && viewport) {
+      for (const entry of markers.current.values()) {
+        const effect = entry.sample?.effect;
+        if (!entry.visible || !effect || effect === "none" || effect === "surrender") continue;
+        const target = markers.current.get(entry.sample.firingTargetId);
+        const travel = effect === "firing" ? 635 : ({ booming: 1350, demolish: 1500, kills: 1250, crack: 800, sword: 900, archer: 1100 }[effect] ?? 0) * 0.56;
+        const duration = travel + (["firing", "booming", "demolish"].includes(effect) ? 3000 : 0);
+        if (!entry.sample.autoCombat && !(entry.isMoving && ["firing", "booming"].includes(effect)) && entry.effectElapsed >= duration) continue;
+        entry.collisionProtected = true;
+        if (!target?.visible || target === entry) continue;
+        target.collisionProtected = true;
+        const sourceBox = projectedMarkerBox(entry, projection, viewport);
+        const targetBox = projectedMarkerBox(target, projection, viewport);
+        if (!sourceBox || !targetBox) continue;
+        if (Math.abs(sourceBox.y - targetBox.y) < (sourceBox.height + targetBox.height) / 2 + 24) {
+          const gap = (sourceBox.width + targetBox.width) / 2 + 48;
+          const separation = targetBox.x - sourceBox.x;
+          if (Math.abs(separation) < gap && !entry.battleOffset && !target.battleOffset) {
+            const direction = separation === 0 ? (entry.id < target.id ? 1 : -1) : Math.sign(separation);
+            const offset = (gap - Math.abs(separation)) / 2;
+            entry.battleOffset = -direction * offset;
+            target.battleOffset = direction * offset;
+          }
+        }
+      }
+    }
     declutterMarkers([...markers.current.values()], projection, viewport);
     for (const entry of markers.current.values()) {
+      entry.element.style.translate = `${entry.battleOffset}px 0`;
       const rendered = entry.visible && entry.inViewport && !entry.collisionHidden;
       if (rendered) {
         entry.marker.position = entry.currentPosition;
@@ -176,7 +268,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
           entry.appliedScale = entry.displayScale;
         }
         setBadgeTroopCount(entry.element, entry.sample?.troopCount ?? entry.troopCount);
-        setFeatureEffect(entry.element, entry.sample?.effect ?? "none", entry.effectElapsed, entry.isMoving);
+        setFeatureEffect(entry.element, entry.sample?.autoCombat ? "none" : entry.sample?.effect ?? "none", entry.effectElapsed, entry.isMoving);
       }
       // Apply the current frame before reattaching a marker that enters view.
       if (entry.rendered !== rendered) {
@@ -209,7 +301,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
 
   useEffect(() => {
     if (!api) return;
-    const overlay = createPaintOverlay(api, (stroke) => live.current.onPaintStroke?.(stroke));
+    const overlay = createPaintOverlay(api, (stroke) => { if (!live.current.readOnly) live.current.onPaintStroke?.(stroke); });
     paintOverlay.current = overlay;
     return () => { paintOverlay.current = null; overlay.dispose(); };
   }, [api]);
@@ -303,6 +395,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         const marker = new api.AdvancedMarkerElement({ map: api.map });
         entry = { marker, listeners: [], visible: true, rendered: true };
         const select = (event) => {
+          if (live.current.readOnly) return;
           if (live.current.mode === "editMovement" && !live.current.preview && !live.current.cleanExport && !live.current.renderMode) {
             event.stopPropagation();
             if (!entry.isDraft) {
@@ -311,7 +404,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
             }
             return;
           }
-          if (!entry.isDraft && !live.current.preview && live.current.mode === "navigate") {
+          if (!entry.isDraft && !live.current.cleanExport && !live.current.renderMode && live.current.mode === "navigate") {
             if (entry.featureType === "unit") live.current.onUnitSelect(entry.id);
             else live.current.onSelect(entry.id);
           }
@@ -320,6 +413,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
           if (live.current.mode === "editMovement") event.stopPropagation();
         };
         const move = () => {
+          if (live.current.readOnly) return;
           if (!entry.hasRoute && !live.current.preview && live.current.mode === "navigate") {
             const p = marker.position;
             const position = typeof p.lat === "function" ? p.toJSON() : { lat: p.lat, lng: p.lng };
@@ -328,7 +422,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
           }
         };
         const context = (event) => {
-          if (live.current.cleanExport || live.current.renderMode || !live.current.onFeatureContextMenu) return;
+          if (live.current.readOnly || live.current.cleanExport || live.current.renderMode || !live.current.onFeatureContextMenu) return;
           if (event.type === "keydown" && event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return;
           event.preventDefault();
           event.stopPropagation();
@@ -346,23 +440,27 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
       entry.isDraft = !!badge.isDraft;
       entry.id = badge.id;
       entry.featureType = badge.featureType;
-      entry.troopCount = badge.troopCount ?? 0;
+      entry.groupId = badge.groupId;
+      entry.combat = normalizeCombat(badge.combat, badge);
+      entry.visibility = badge.visibility;
+      entry.troopCount = badge.featureType === "unit" ? badge.quantity ?? 1 : badge.troopCount ?? 0;
       entry.position = { lat: badge.lat, lng: badge.lng };
       entry.showTime = badge.visibility?.showAt ? scenarioTime(badge.visibility.showAt) : null;
       entry.hideTime = badge.visibility?.hideAt ? scenarioTime(badge.visibility.hideAt) : null;
       entry.scale = BADGE_SIZES[badge.size] ?? 1;
       entry.stars = badge.featureType === "badge" ? badge.stars ?? 0 : 0;
-      entry.route = badge.route.length >= 1 && !routeError(badge.route) ? compileRoute(badge.route, badge.troopCount ?? 0).map((stop) => ({ ...stop, lat: Number(stop.lat), lng: Number(stop.lng) })) : [];
+      entry.route = badge.route.length >= 1 && !routeError(badge.route) ? compileRoute(badge.route, entry.troopCount).map((stop) => ({ ...stop, lat: Number(stop.lat), lng: Number(stop.lng) })) : [];
       entry.hasRoute = badge.route.length > 0;
-      entry.marker.gmpClickable = !badge.isDraft && (preview || mode === "navigate" || mode === "editMovement");
+      entry.marker.gmpClickable = !props.readOnly && !badge.isDraft && (preview || mode === "navigate" || mode === "editMovement");
       entry.marker.gmpDraggable = !preview && mode === "navigate" && !entry.hasRoute;
-      entry.marker.title = badge.isDraft ? "Marker preview" : mode === "editMovement" ? `Choose an effect targeting ${badge.label ?? badge.name}` : `Click to edit ${badge.label ?? badge.name}. Right-click for edit and movement controls.`;
-      entry.alwaysShow = editingMovement || preview || mode === "export" || showAllMarkers || badge.isDraft || badge.id === selectedId;
-      entry.collisionProtected = editingMovement || showAllMarkers || badge.isDraft || badge.id === selectedId;
+      entry.marker.title = props.readOnly ? (badge.label ?? badge.name) : badge.isDraft ? "Marker preview" : mode === "editMovement" ? `Choose an effect targeting ${badge.label ?? badge.name}` : `Click to edit ${badge.label ?? badge.name}. Right-click for edit and movement controls.`;
+      entry.alwaysShow = mode === "command" || mode === "replay" || editingMovement || preview || mode === "export" || showAllMarkers || badge.isDraft || badge.id === selectedId;
+      entry.collisionProtected = mode === "command" || mode === "replay" || editingMovement || showAllMarkers || badge.isDraft || badge.id === selectedId;
+      entry.baseCollisionProtected = entry.collisionProtected;
       // Our layout shrinks markers before hiding them; Google's collision pass
       // would otherwise hide markers against one another or map labels first.
       entry.marker.collisionBehavior = api.CollisionBehavior.REQUIRED;
-      const appearance = JSON.stringify([badge.featureType, badge.flag, badge.symbol, badge.symbolImage, badge.stars, badge.troopCount, badge.label, badge.kind, badge.image, badge.color, badge.name, badge.id === selectedId, !!badge.isDraft]);
+      const appearance = JSON.stringify([badge.featureType, badge.flag, badge.symbol, badge.symbolImage, badge.stars, badge.troopCount, badge.quantity, badge.label, badge.kind, badge.image, badge.color, badge.name, badge.id === selectedId, !!badge.isDraft]);
       if (entry.appearance !== appearance) {
         entry.element = badge.featureType === "unit" ? unitElement(badge, badge.id === selectedId, badge.isDraft) : badgeElement(badge, badge.id === selectedId, badge.isDraft);
         entry.marker.replaceChildren(entry.element);
@@ -370,10 +468,12 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         entry.dimensions = null;
         entry.appliedScale = null;
       }
+      entry.element.style.setProperty("--group-color", live.current.groups?.find((group) => group.id === badge.groupId)?.color ?? "#3478d4");
+      entry.element.classList.toggle("has-group", !!badge.groupId);
       entry.element.classList.toggle("movement-context", editingMovement && !badge.isDraft);
     }
     drawPreview(preview ? playing ? previewTime.current ?? initialPreviewTime : initialPreviewTime : null);
-  }, [api, badges, units, draft, unitDraft, selectedId, mode, preview, playing, initialPreviewTime, authoringTime, showAllMarkers, editingMovement, drawPreview]);
+  }, [api, badges, units, draft, unitDraft, selectedId, mode, preview, playing, initialPreviewTime, authoringTime, showAllMarkers, editingMovement, props.groups, props.readOnly, drawPreview]);
 
   useEffect(() => {
     if (!api) return;
@@ -393,9 +493,11 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         const line = new api.Polyline({ map: api.map, path: feature.path, geodesic: false });
         entry = { label: new api.AdvancedMarkerElement({ collisionBehavior: api.CollisionBehavior.REQUIRED }), line, rendered: new api.Polyline({ map: api.map, geodesic: false }), listeners: [], syncing: false, signature: JSON.stringify(feature.path) };
         const labelClick = () => {
+          if (live.current.readOnly) return;
           if (!live.current.preview && live.current.mode === "navigate") live.current.onLineSelect(feature.id);
         };
         const labelMove = () => {
+          if (live.current.readOnly) return;
           if (live.current.preview || live.current.lineDraft?.id !== feature.id || live.current.lineDraft.kind !== "text") return;
           const position = entry.label.position;
           live.current.onLinePath([typeof position.lat === "function" ? position.toJSON() : { lat: position.lat, lng: position.lng }]);
@@ -405,7 +507,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         entry.listeners.push({ remove() { entry.label.removeEventListener("gmp-click", labelClick); entry.label.removeEventListener("gmp-dragend", labelMove); } });
         const path = line.getPath();
         const changed = (index) => {
-          if (entry.syncing || live.current.preview || live.current.lineDraft?.id !== feature.id) return;
+          if (live.current.readOnly || entry.syncing || live.current.preview || live.current.lineDraft?.id !== feature.id) return;
           if (path.getLength() > MAX_LINE_POINTS) {
             entry.syncing = true;
             path.removeAt(index);
@@ -417,7 +519,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         };
         for (const event of ["insert_at", "set_at", "remove_at"]) entry.listeners.push(path.addListener(event, changed));
         const clicked = (event) => {
-          if (live.current.preview) return;
+          if (live.current.readOnly || live.current.preview) return;
           if (live.current.lineDraft?.id === feature.id && live.current.mode === "editLine") {
             live.current.onLinePoint(typeof event.vertex === "number" ? event.vertex : null);
           } else if (live.current.mode === "navigate") live.current.onLineSelect(feature.id);
@@ -549,17 +651,19 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
     const removers = [];
     const activeGuides = routeGuides.current;
     for (const badge of [...badges, ...units]) {
-      if (badge.id === draft?.id || badge.id === unitDraft?.id || (!editingMovement && !badge.showTrail) || badge.route.length < 2) continue;
+      if (badge.id === draft?.id || badge.id === unitDraft?.id || (!props.showAllMovement && badge.id !== selectedId && !(props.selectedIds ?? []).includes(badge.id)) || badge.route.length < 2) continue;
       const path = badge.route.map((stop) => coordinates(stop.lat, stop.lng)).filter(Boolean);
       if (path.length < 2) continue;
-      const line = new api.Polyline({ map: api.map, path, geodesic: true, clickable: false, strokeColor: lineColor, strokeOpacity: editingMovement ? 0.25 : 0.75, strokeWeight: editingMovement ? 2 : 3, zIndex: 5 });
+      const color = props.groups?.find((group) => group.id === badge.groupId)?.color ?? "#3478d4";
+      const line = new api.Polyline({ map: api.map, path, geodesic: true, clickable: false, strokeColor: color, strokeOpacity: 0.75, strokeWeight: 3, zIndex: 5 });
       guides.push(line);
       activeGuides.set(badge.id, { line, visible: true, showTime: badge.visibility?.showAt ? scenarioTime(badge.visibility.showAt) : null, hideTime: badge.visibility?.hideAt ? scenarioTime(badge.visibility.hideAt) : null });
     }
     const activeDraft = draft ?? unitDraft;
     if (activeDraft && !preview && activeDraft.route.length) {
       const path = activeDraft.route.map((stop) => coordinates(stop.lat, stop.lng)).filter(Boolean);
-      guides.push(new api.Polyline({ map: api.map, path, geodesic: true, clickable: false, strokeColor: lineColor, strokeWeight: 3, zIndex: 10 }));
+      const color = props.groups?.find((group) => group.id === activeDraft.groupId)?.color ?? "#3478d4";
+      guides.push(new api.Polyline({ map: api.map, path, geodesic: true, clickable: false, strokeColor: color, strokeWeight: 3, zIndex: 10 }));
       activeDraft.route.forEach((stop, index) => {
         const position = coordinates(stop.lat, stop.lng);
         if (!position) return;
@@ -584,7 +688,44 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
       removers.forEach((remove) => remove());
       handles.forEach((marker) => { marker.map = null; });
     };
-  }, [api, badges, units, draft, unitDraft, mode, preview, lineColor, editingMovement, drawPreview]);
+  }, [api, badges, units, draft, unitDraft, mode, preview, selectedId, props.selectedIds, props.showAllMovement, props.groups, drawPreview]);
+
+  useEffect(() => { drawPreview(previewTime.current); }, [props.battleForces, props.battleTime, props.battleReplay, props.selectedIds, props.groups, drawPreview]);
+
+  useEffect(() => {
+    if (!api || mode !== "command") return;
+    return createCommandOverlay(api, markers, live);
+  }, [api, mode]);
+
+  useEffect(() => {
+    if (!api || !draft || preview || playing || mode === "command" || props.cleanExport || props.renderMode) return;
+    const center = coordinates(draft.lat, draft.lng);
+    const range = normalizeCombat(draft.combat, draft).range;
+    if (!center || range <= 0) return;
+    const circle = new window.google.maps.Circle({
+      map: api.map, center, radius: range * 1000,
+      fillColor: "#ffb020", fillOpacity: 0.06,
+      strokeColor: "#ffb020", strokeOpacity: 0.65, strokeWeight: 1,
+      clickable: false,
+    });
+    return () => circle.setMap(null);
+  }, [api, draft, preview, playing, mode, props.cleanExport, props.renderMode]);
+
+  useEffect(() => {
+    if (!api || mode !== "command") return;
+    const shapes = [];
+    for (const force of props.battleForces ?? []) {
+      if (!props.selectedIds?.includes(force.id) || (force.count === 0 && force.initialCount !== 0) || !force.visible) continue;
+      if (force.combat.range > 0) shapes.push(new window.google.maps.Circle({ map: api.map, center: force, radius: force.combat.range * 1000, fillOpacity: 0.04, strokeColor: "#ffb020", strokeOpacity: 0.65, strokeWeight: 1, clickable: false }));
+      if (force.move) {
+        const path = remainingPath(force.move, props.battleTime);
+        shapes.push(new api.Polyline({ map: api.map, path, geodesic: true, strokeColor: "#ffffff", strokeWeight: 6, strokeOpacity: 0.9, clickable: false, zIndex: 41 }));
+        shapes.push(new api.Polyline({ map: api.map, path, geodesic: true, strokeColor: "#d62828", strokeWeight: 3, clickable: false, zIndex: 42 }));
+        shapes.push(new window.google.maps.Circle({ map: api.map, center: force.move.path.at(-1), radius: Math.max(20, 300000 / 2 ** (api.map.getZoom() ?? 2)), strokeColor: "#d62828", fillColor: "#d62828", fillOpacity: 0.5, strokeWeight: 2, clickable: false }));
+      }
+    }
+    return () => shapes.forEach((shape) => shape.setMap(null));
+  }, [api, mode, props.battleForces, props.battleTime, props.selectedIds]);
 
   useEffect(() => {
     api?.map.setOptions({ draggableCursor: !preview && (pointModes.includes(mode) || mode === "paint") ? "crosshair" : null, draggable: preview || mode !== "paint", disableDoubleClickZoom: !preview && (pointModes.includes(mode) || mode === "paint") });
@@ -606,8 +747,10 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         const bounds = new window.google.maps.LatLngBounds();
         points.forEach(({ lat, lng }) => bounds.extend({ lat, lng }));
         const timeline = host.current?.closest(".map-stage")?.querySelector(".timeline");
-        const top = timeline ? timeline.offsetTop + timeline.offsetHeight + 16 : 80;
-        api.map.fitBounds(bounds, { top, bottom: 60, left: 50, right: 70 });
+        const previewControls = host.current?.closest(".map-stage")?.querySelector(".preview-map-controls");
+        const top = previewControls ? previewControls.offsetTop + previewControls.offsetHeight + 16 : timeline ? timeline.offsetTop + timeline.offsetHeight + 16 : 80;
+        const bottom = previewControls && timeline ? api.map.getDiv().clientHeight - timeline.offsetTop + 16 : 60;
+        api.map.fitBounds(bounds, { top, bottom, left: 50, right: 70 });
       }
     },
     focus(point) {

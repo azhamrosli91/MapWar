@@ -1,17 +1,19 @@
+import FeatureCard from "./FeatureCard.jsx";
+import HelpTooltip from "./HelpTooltip.jsx";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowUpRight,
   Check,
-  ChevronRight,
-  Clock3,
   Compass,
   Copy,
   Crosshair,
   Download,
+  ExternalLink,
   Film,
   Flag,
   Globe2,
+  HardHat,
   ImageDown,
   ImagePlus,
   Layers2,
@@ -22,20 +24,32 @@ import {
   Minimize2,
   PanelLeftClose,
   PanelLeftOpen,
-  Pause,
+  Paintbrush,
   Pencil,
-  Play,
   Plus,
+  Play,
+  Pause,
   RotateCcw,
+  Route,
+  Truck,
+  Type,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
 import MapCanvas from "./MapCanvas.jsx";
+import PreviewLibrary from "./PreviewLibrary.jsx";
+import GroupTabs from "./GroupTabs.jsx";
+import ForceSettings from "./ForceSettings.jsx";
+import BattleControls from "./BattleControls.jsx";
+import BattlePanel from "./BattlePanel.jsx";
+import useBattle from "./useBattle.js";
+import { defaultCombat, normalizeCombat, replayRange } from "./combat.js";
 import MapFeatureControls from "./MapFeatureControls.jsx";
 import LineEditor from "./LineEditor.jsx";
-import RouteEditor from "./RouteEditor.jsx";
+import SymbolPicker from "./SymbolPicker.jsx";
 import UnitEditor from "./UnitEditor.jsx";
+import RouteEditor from "./RouteEditor.jsx";
 import VisibilityEditor from "./VisibilityEditor.jsx";
 import SizePicker from "./SizePicker.jsx";
 import Timeline from "./Timeline.jsx";
@@ -45,7 +59,7 @@ import PictureExportPanel from "./PictureExportPanel.jsx";
 import usePlayback from "./usePlayback.js";
 import useVideoJobs from "./useVideoJobs.js";
 import { videoDate, videoFrameSize } from "./video.js";
-import { BADGE_SIZES, MAX_LINES, MAX_LINE_POINTS, MAX_STOPS, TARGET_EFFECTS, createRouteStop, insertMovementStop, nextHour, scenarioTime, startMovementRoute, routeError, timelineRange, visibilityError } from "./timeline.js";
+import { BADGE_FORMATIONS, BADGE_SIZES, DEFAULT_SCENARIO_DATE, MAX_LINES, MAX_LINE_POINTS, MAX_STOPS, TARGET_EFFECTS, createRouteStop, insertMovementStop, nextHour, scenarioTime, startMovementRoute, routeError, timelineRange, visibilityError } from "./timeline.js";
 import { HAS_MAP_KEY } from "./maps-config.js";
 import { BADGE_SYMBOLS, DEFAULT_BADGE_SYMBOL, UNIT_KINDS, unitImage } from "./badge.js";
 import { MAX_PAINT_POINTS, MAX_PAINT_STROKES } from "./paint.js";
@@ -146,13 +160,7 @@ function SetupCard({ status }) {
             ? "Let’s reconnect your map."
             : "Every place has a story."}
       </h1>
-      <p className="setup-copy">
-        {loading
-          ? "Getting Google Maps ready for your next marker."
-          : error
-            ? "Google Maps could not load. Check your connection, API key, billing, and allowed website addresses, then reload."
-            : "Connect Google Maps to start placing your flags. Your badges, your locations, all in one view."}
-      </p>
+      
       {!loading && !error && (
         <>
           <div className="setup-steps">
@@ -181,9 +189,7 @@ function SetupCard({ status }) {
           >
             Google Maps setup guide <ArrowUpRight size={16} />
           </a>
-          <p className="setup-footnote">
-            You can already create badges using coordinates.
-          </p>
+          
         </>
       )}
       {error && (
@@ -196,6 +202,7 @@ function SetupCard({ status }) {
 }
 
 export default function App() {
+  const [previewLibraryOpen, setPreviewLibraryOpen] = useState(false);
   const [project, setProject] = useState(EMPTY_PROJECT);
   const [mapFileName, setMapFileName] = useState(readMapFileName);
   const [initialView, setInitialView] = useState(EMPTY_PROJECT.view);
@@ -206,9 +213,12 @@ export default function App() {
     HAS_MAP_KEY ? "loading" : "missing",
   );
   const [panelOpen, setPanelOpen] = useState(() => !window.matchMedia("(max-width: 700px)").matches);
+  const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 700px)").matches);
   const actionsDialogRef = useRef(null);
+  const deleteBadgeDialogRef = useRef(null);
   const [mapFullscreen, setMapFullscreen] = useState(false);
   const [timelineMinimized, setTimelineMinimized] = useState(true);
+  const [showAllMovement, setShowAllMovement] = useState(false);
   const [exportKind, setExportKind] = useState(null);
   const exportOpen = exportKind !== null;
   const videoOpen = exportKind === "video";
@@ -224,6 +234,9 @@ export default function App() {
   const [dirty, setDirty] = useState(false);
   const [mode, setMode] = useState("navigate");
   const [section, setSection] = useState("badges");
+  const [cardSearch, setCardSearch] = useState({ badges: "", units: "" });
+  const [paintDestination, setPaintDestination] = useState("");
+  const [activeGroupId, setActiveGroupId] = useState(EMPTY_PROJECT.groups[0].id);
   const [brush, setBrush] = useState({ tool: "paint", size: "medium", shape: "circle", color: "#3478d4", opacity: 0.35 });
   const [lineDraft, setLineDraft] = useState(null);
   const [selectedPoint, setSelectedPoint] = useState(null);
@@ -242,9 +255,42 @@ export default function App() {
   const editingView = useRef(null);
   const importRef = useRef(null);
   const uploadSequence = useRef(0);
-  const range = useMemo(() => timelineRange([...project.badges, ...project.units]), [project.badges, project.units]);
+  const battle = useBattle(project, setProject, activeGroupId);
+  const visibleProject = battle.snapshot ?? project;
+  const range = useMemo(() => battle.mode === "replay" ? replayRange(battle.replay) : timelineRange([...project.badges, ...project.units]), [battle.mode, battle.replay, project.badges, project.units]);
+  const groupItems = (key) => project[key].filter((item) => item.groupId === activeGroupId);
+  const filteredCards = (key) => groupItems(key).filter((item) => (key === "badges" ? item.label : item.name).toLowerCase().includes(cardSearch[key].trim().toLowerCase()));
+  function chooseGroup(id) {
+    if (!discardAllowed()) return;
+    resetEditor(); setActiveGroupId(id); setSelectedId(null);
+  }
+  function changeGroups(next) {
+    try { checkProjectSize(next); setProject(next); } catch (error) { setMessage({ error: true, text: error.message }); }
+  }
+  useEffect(() => {
+    if (!project.groups.some((group) => group.id === activeGroupId)) setActiveGroupId(project.groups[0].id);
+  }, [project.groups, activeGroupId]);
   const playback = usePlayback(mapRef, range, project.playbackDuration);
+  const [replayRequested, setReplayRequested] = useState(false);
+  useEffect(() => {
+    if (!replayRequested || battle.mode === "command" || !range) return;
+    playback.restart();
+    playback.play();
+    setReplayRequested(false);
+    // Start after leaving route planning so command markers no longer override playback.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replayRequested, battle.mode, range]);
   const videoJobs = useVideoJobs();
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 700px)");
+    const updateMobile = () => {
+      setMobile(media.matches);
+      if (!media.matches) actionsDialogRef.current?.close();
+    };
+    media.addEventListener("change", updateMobile);
+    return () => media.removeEventListener("change", updateMobile);
+  }, []);
 
   function updateMapFileName(filename) {
     setMapFileName(filename);
@@ -405,7 +451,7 @@ export default function App() {
     const feature = (featureMenu.featureType === "badge" ? project.badges : project.units).find((item) => item.id === featureMenu.id);
     if (!feature) return;
     const time = featureMenu.time;
-    const dateTime = time == null ? range ? new Date(range.start).toISOString().slice(0, 16) : "" : new Date(time).toISOString().slice(0, 16);
+    const dateTime = time == null ? range ? new Date(range.start).toISOString().slice(0, 16) : DEFAULT_SCENARIO_DATE : new Date(time).toISOString().slice(0, 16);
     let edited = structuredClone(feature);
     if (ui === "movement" && time != null) {
       try { edited.route = startMovementRoute(feature, dateTime, mapRef.current?.sampleFeature(feature, time)); }
@@ -477,6 +523,7 @@ export default function App() {
       if (mapEdit.featureType === "badge") feature.troopCount = first.troopCount ?? feature.troopCount;
     }
     const collection = mapEdit.featureType === "badge" ? "badges" : "units";
+    try { normalizeCombat(feature.combat, feature); } catch (error) { return setFormError(error.message); }
     const updated = { ...project, [collection]: project[collection].map((item) => item.id === feature.id ? feature : item) };
     try { checkProjectSize(updated); } catch (error) { return setFormError(error.message); }
     const time = mapEdit.time;
@@ -513,10 +560,12 @@ export default function App() {
       id: crypto.randomUUID(),
       label: "",
       flag: "",
+      groupId: activeGroupId,
+      combat: defaultCombat({}),
       symbol: DEFAULT_BADGE_SYMBOL,
       symbolImage: "",
       stars: 0,
-      troopCount: 0,
+      troopCount: BADGE_FORMATIONS.M.troops,
       size: "M",
       route: [],
       visibility: { showAt: "", hideAt: "" },
@@ -530,7 +579,7 @@ export default function App() {
   }
 
   function selectBadge(id) {
-    if (playback.preview && mapEdit?.ui !== "full") return;
+    if (exportOpen || battle.mode !== "edit") return;
     if (draft?.id === id) {
       setPanelOpen(true);
       return;
@@ -541,6 +590,8 @@ export default function App() {
     resetEditor();
     setSelectedId(id);
     setSection("badges");
+    setActiveGroupId(badge.groupId);
+    playback.edit();
     setDraft({ ...badge });
     setPanelOpen(true);
     mapRef.current?.focus(badge);
@@ -552,7 +603,7 @@ export default function App() {
       const next = { ...current, ...changes };
       if (next.route.length) {
         if (!Object.hasOwn(changes, "route")) {
-          const positionChanges = Object.fromEntries(["lat", "lng", "size"].filter((key) => Object.hasOwn(changes, key)).map((key) => [key, changes[key]]));
+          const positionChanges = Object.fromEntries(["lat", "lng", "size", "troopCount"].filter((key) => Object.hasOwn(changes, key)).map((key) => [key, changes[key]]));
           next.route = next.route.map((stop, index) => index === 0 ? { ...stop, ...positionChanges } : stop);
         }
         next.lat = next.route[0].lat;
@@ -589,7 +640,7 @@ export default function App() {
     if (!discardAllowed()) return;
     if (project.units.length >= MAX_UNITS) return setMessage({ error: true, text: `This map has reached ${MAX_UNITS} equipment items.` });
     resetEditor();
-    setUnitDraft({ id: crypto.randomUUID(), name: "", kind: "tank", image: "", size: "M", route: [], visibility: { showAt: "", hideAt: "" }, showTrail: false, lat: "", lng: "" });
+    setUnitDraft({ id: crypto.randomUUID(), name: "", groupId: activeGroupId, quantity: 1, combat: defaultCombat({ kind: "tank" }), kind: "tank", image: "", size: "M", route: [], visibility: { showAt: "", hideAt: "" }, showTrail: false, lat: "", lng: "" });
     setSection("units");
     setSelectedId(null);
     setMode(mapStatus === "ready" ? "placeUnit" : "navigate");
@@ -597,12 +648,14 @@ export default function App() {
   }
 
   function selectUnit(id) {
-    if (playback.preview && mapEdit?.ui !== "full") return;
+    if (exportOpen || battle.mode !== "edit") return;
     if (unitDraft?.id === id) { setPanelOpen(true); return; }
     if (!discardAllowed()) return;
     const unit = project.units.find((item) => item.id === id);
     if (!unit) return;
     resetEditor();
+    setActiveGroupId(unit.groupId);
+    playback.edit();
     setUnitDraft({ ...unit });
     setSection("units");
     setSelectedId(id);
@@ -641,6 +694,8 @@ export default function App() {
   function saveUnit(event) {
     event.preventDefault();
     if (!unitDraft.name.trim()) return setFormError("Give your equipment a name.");
+    if (!Number.isSafeInteger(unitDraft.quantity) || unitDraft.quantity < 0 || unitDraft.quantity > 1e9) return setFormError("Enter a valid equipment quantity.");
+    try { normalizeCombat(unitDraft.combat, unitDraft); } catch (error) { return setFormError(error.message); }
     const position = coordinates(unitDraft.lat, unitDraft.lng);
     if (!position) return setFormError("Choose a location or enter valid coordinates.");
     const problem = routeError(unitDraft.route);
@@ -720,6 +775,8 @@ export default function App() {
   function commitBadge(event) {
     event.preventDefault();
     const position = coordinates(draft.lat, draft.lng);
+    try { normalizeCombat(draft.combat, draft); } catch (error) { return setFormError(error.message); }
+    if (!Number.isSafeInteger(draft.troopCount) || draft.troopCount < 0) return setFormError("Enter a valid soldier count.");
     if (!draft.label.trim()) return setFormError("Give your badge a label.");
     if (!draft.flag) return setFormError("Upload a flag image for this badge.");
     if (draft.symbol === "custom" && !draft.symbolImage) return setFormError("Upload an image for the custom badge symbol.");
@@ -804,7 +861,8 @@ export default function App() {
   }
 
   function deleteBadge() {
-    if (!window.confirm(`Delete “${draft.label}” from this map?`)) return;
+    if (!draft || !editing) return;
+    deleteBadgeDialogRef.current?.close();
     setProject((current) => clearInvalidFiringTargets({
       ...current,
       badges: current.badges.filter((badge) => badge.id !== draft.id),
@@ -814,26 +872,9 @@ export default function App() {
     setMessage({ text: "Badge deleted." });
   }
 
-  function resetBadgeSettings() {
-    if (!draft || !editing) return;
-    if (!window.confirm("Reset this badge’s symbol, size, stars, troop number, visibility, and movement settings? Its name, flag, and location will stay as they are.")) return;
-    setMode("navigate");
-    updateDraft({
-      symbol: DEFAULT_BADGE_SYMBOL,
-      symbolImage: "",
-      stars: 0,
-      troopCount: 0,
-      size: "M",
-      route: [],
-      showTrail: false,
-      visibility: { showAt: "", hideAt: "" },
-    });
-    setMessage({ text: "Badge settings reset. Save changes to apply them." });
-  }
-
   function createNewMap() {
     if (!discardAllowed()) return;
-    const hasMapData = project.badges.length || project.units.length || project.lines.length || project.paintStrokes.length ||
+    const hasMapData = project.battles.length || project.groups.length > 1 || project.badges.length || project.units.length || project.lines.length || project.paintStrokes.length ||
       project.playbackDuration !== EMPTY_PROJECT.playbackDuration ||
       JSON.stringify(project.view) !== JSON.stringify(EMPTY_PROJECT.view);
     if (hasMapData && !window.confirm("Start a new map? This clears the current badges, equipment, lines, paint, and map settings. Export a backup first if you want to keep them.")) return;
@@ -849,7 +890,9 @@ export default function App() {
     playback.edit();
     setSelectedId(null);
     setSection("badges");
+    battle.edit();
     setProject(freshProject);
+    setActiveGroupId(freshProject.groups[0].id);
     updateMapFileName("");
     setInitialView(freshProject.view);
     editingView.current = null;
@@ -883,7 +926,9 @@ export default function App() {
       resetEditor();
       playback.edit();
       setSelectedId(null);
+      battle.edit();
       setProject(incoming);
+      setActiveGroupId(incoming.groups[0].id);
       updateMapFileName(file.name);
       mapRef.current?.restore(incoming.view);
       setMessage({
@@ -938,7 +983,7 @@ export default function App() {
       const response = await fetch("/api/map/image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "image", project, view, logicalSize, scale, previewTime: playback.preview ? playback.cursor : null }),
+        body: JSON.stringify({ kind: "image", project, battleReplayId: battle.mode === "replay" ? battle.replayId : undefined, view, logicalSize, scale, previewTime: playback.preview ? playback.cursor : null }),
       }).catch(() => { throw new Error("The local renderer is unavailable. Start Malaya World War II with npm run dev."); });
       if (!response.ok) {
         const result = await response.json().catch(() => ({}));
@@ -1015,9 +1060,9 @@ export default function App() {
     if (!discardAllowed()) return;
     if (project.lines.length >= MAX_LINES) return setMessage({ error: true, text: `This map has reached ${MAX_LINES} lines.` });
     resetEditor();
-    setLineDraft({ id: crypto.randomUUID(), kind, showLine: true, showLabel: kind === "text", name: kind === "text" ? "New label" : `Line ${project.lines.length + 1}`, style: "solid", shape: "straight", startArrow: false, endArrow: false, width: 3, path: [] });
+    setLineDraft({ id: crypto.randomUUID(), groupId: activeGroupId, kind, showLine: true, showLabel: kind === "text", name: kind === "text" ? "New label" : `Line ${project.lines.length + 1}`, style: "solid", shape: "straight", startArrow: false, endArrow: false, width: 3, path: [] });
     setSelectedId(null);
-    setSection("lines");
+    setSection(kind === "text" ? "text" : "lines");
     changeMode("drawLine");
   }
 
@@ -1028,8 +1073,9 @@ export default function App() {
     const line = project.lines.find((item) => item.id === id);
     if (!line) return;
     resetEditor();
+    setActiveGroupId(line.groupId);
     setLineDraft({ ...line, path: line.path.map((point) => ({ ...point })) });
-    setSection("lines");
+    setSection(line.kind === "text" ? "text" : "lines");
     setSelectedId(null);
     setMode("editLine");
     setPanelOpen(true);
@@ -1095,17 +1141,38 @@ export default function App() {
     if (draft) updateDraft(changes); else updateUnit(changes);
   }
 
+  function resumeSidebarEditing() {
+    if (playback.preview && !playback.playing && !exportOpen && !mapEdit) playback.edit();
+  }
+
   function beginPreview(action) {
+    if (battle.mode === "command") battle.edit();
     if (!playback.preview || mapEdit) {
       if (!discardAllowed()) return;
       resetEditor();
       if (window.matchMedia("(max-width: 700px)").matches) setPanelOpen(false);
     }
+    if (action === playback.play) setPanelOpen(false);
     action();
   }
 
+  function playBattleReplay() {
+    if (playback.playing) { playback.pause(); return; }
+    if (!discardAllowed()) return;
+    setPanelOpen(false);
+    if (battle.mode === "command") {
+      battle.edit();
+      resetEditor();
+      playback.edit();
+      setReplayRequested(true);
+      setTimelineMinimized(false);
+      return;
+    }
+    beginPreview(playback.play);
+  }
+
   function openExport(kind) {
-    if (exportOpen || mapStatus !== "ready" || !discardAllowed()) return;
+    if (exportOpen || mapStatus !== "ready" || !discardAllowed() || battle.mode === "command") return;
     const view = mapRef.current?.getView();
     if (!view) return;
     editingView.current = view;
@@ -1142,7 +1209,7 @@ export default function App() {
     const view = mapRef.current?.getView();
     if (!view) throw new Error("The map is not ready.");
     checkProjectSize(project);
-    return { project: structuredClone(project), view, orientation: exportOrientation, showDate: videoShowDate && !!range, logicalSize: { ...exportFrame }, duration: project.playbackDuration,
+    return { project: structuredClone(project), battleReplayId: battle.mode === "replay" ? battle.replayId : undefined, view, orientation: exportOrientation, showDate: videoShowDate && !!range, logicalSize: { ...exportFrame }, duration: project.playbackDuration,
       recording: { referenceZoom: mapRef.current.getReferenceZoom(), frames: [] } };
   }
 
@@ -1164,32 +1231,38 @@ export default function App() {
 
   const timeline = <Timeline range={range} duration={project.playbackDuration} onDuration={(playbackDuration) => setProject((current) => ({ ...current, playbackDuration }))} playback={playback} onRestart={() => beginPreview(playback.restart)} onSeek={(time) => beginPreview(() => { playback.pause(); playback.seek(time); })} disabled={mapStatus !== "ready" || !!mapEdit} minimized={timelineMinimized} onMinimizedChange={setTimelineMinimized} />;
 
-  const secondaryActions = (<>
-            <button
-              className="text-button header-timeline-button"
-              disabled={!ready || !range || exportOpen}
-              onClick={() => setTimelineMinimized((current) => !current)}
-              aria-label={timelineMinimized ? "Show historical timeline" : "Hide historical timeline"}
-              aria-expanded={!!range && !timelineMinimized}
-              aria-controls={range ? "historical-timeline" : undefined}
-              title={timelineMinimized ? "Show historical timeline" : "Hide historical timeline"}
-            >
-              <Clock3 size={18} />
-              <span>Historical timeline</span>
-            </button>
-            <button
-              className="text-button header-reset-button"
-              disabled={!ready || !range || mapStatus !== "ready" || exportOpen}
-              onClick={() => beginPreview(playback.restart)}
-              aria-label="Reset animation to first date"
-              title="Reset animation to first date"
-            >
-              <RotateCcw size={18} />
-              <span>Reset</span>
-            </button>
+  const playbackSpeed = <select className="playback-speed" aria-label="Playback speed" title="Playback speed" value={playback.speed} onChange={(event) => playback.setSpeed(Number(event.target.value))}>
+    <option value={1}>Normal (1×)</option>
+    <option value={2}>Fast (2×)</option>
+    <option value={3}>Fast (3×)</option>
+    <option value={1 / 1.5}>1.5× slower (0.67×)</option>
+    <option value={0.5}>Slower (0.5×)</option>
+  </select>;
+  const battleControls = !exportOpen && <BattleControls battle={battle} mapReady={mapStatus === "ready"} playback={playback} previewTime={playback.getTime() ?? playback.cursor ?? range?.start ?? null} beforeStart={() => { if (!discardAllowed()) return false; resetEditor(); playback.pause(); setPanelOpen(false); return true; }} />;
+  const movementControl = <button type="button" className={`map-button${showAllMovement ? " active" : ""}`} disabled={mapStatus !== "ready"} aria-pressed={showAllMovement} onClick={() => setShowAllMovement((show) => !show)}>
+    <Route size={17} />
+    <span>Show all movement</span>
+  </button>;
+  const pictureControl = <button className="map-button image-export-toolbar-button" disabled={!ready || mapStatus !== "ready" || pictureExporting || exportOpen} onClick={() => openExport("image")} aria-label="Download map picture" title="Download map picture">
+    {pictureExporting ? <LoaderCircle size={16} className="spin" /> : <ImageDown size={16} />}
+    <span>{pictureExporting ? "Creating picture…" : "Download picture"}</span>
+  </button>;
+  const fullscreenControl = <button
+    className="map-button fullscreen-button"
+    onClick={() => setMapFullscreen((current) => !current)}
+    aria-label={mapFullscreen ? "Exit full screen map" : "Show full screen map"}
+    aria-pressed={mapFullscreen}
+    title={mapFullscreen ? "Exit full screen map (Esc)" : "Show full screen map"}
+  >
+    {mapFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+    <span>{mapFullscreen ? "Exit full screen" : "Full screen"}</span>
+  </button>;
+
+  const secondaryActions = (<div className="secondary-actions" inert={battle.mode === "command"}>
+            <button className="export-button" aria-label="Preview library" title="Preview library" disabled={!ready || importing || exportOpen || battle.mode === "command"} onClick={() => { playback.pause(); setPreviewLibraryOpen(true); }}><ExternalLink size={16} /><span>Preview library</span></button>
             <button
               className="new-map-button"
-              disabled={!ready || importing || playback.preview || exportOpen}
+              disabled={!ready || importing || playback.playing || exportOpen}
               onClick={createNewMap}
               title="Start a new map"
             >
@@ -1198,7 +1271,7 @@ export default function App() {
             </button>
             <button
               className="text-button"
-              disabled={!ready || importing || playback.preview || exportOpen}
+              disabled={!ready || importing || playback.playing || exportOpen}
               onClick={() => importRef.current.click()}
             >
               {importing ? (
@@ -1217,14 +1290,28 @@ export default function App() {
               <span>Export map</span>
             </button>
             <button className="export-button" disabled={!ready || mapStatus !== "ready" || exportOpen} onClick={() => openExport("video")}><Film size={16} /><span>Export video</span></button>
-  </>);
+  </div>);
 
   return (
       <div className={`app${mapFullscreen ? " map-fullscreen" : ""}`}>
-      <dialog ref={actionsDialogRef} id="mobile-map-actions" className="mobile-actions-dialog" aria-labelledby="mobile-actions-title" onClick={(event) => { if (event.target === event.currentTarget || event.target.closest("button:not(:disabled)")) event.currentTarget.close(); }}>
+      {previewLibraryOpen && <PreviewLibrary project={project} mapFileName={mapFileName} hasDraft={!!(draft || unitDraft || lineDraft || mapEdit || dirty || battle.mode === "command")} onClose={() => setPreviewLibraryOpen(false)} />}
+      <dialog ref={deleteBadgeDialogRef} className="group-name-dialog delete-badge-dialog" aria-labelledby="delete-badge-title" aria-describedby="delete-badge-description" onClick={(event) => { if (event.target === event.currentTarget) event.currentTarget.close(); }}>
+        <h3 id="delete-badge-title">Delete badge</h3>
+        <p id="delete-badge-description">Are you sure you want to delete {draft?.label || "this badge"}?</p>
+        <div className="delete-badge-actions">
+          <button type="button" className="secondary" autoFocus onClick={() => deleteBadgeDialogRef.current?.close()}>No</button>
+          <button type="button" className="primary" onClick={deleteBadge}>Yes</button>
+        </div>
+      </dialog>
+      <dialog ref={actionsDialogRef} id="mobile-map-actions" className="mobile-actions-dialog" aria-labelledby="mobile-actions-title" onClick={(event) => { if (event.target === event.currentTarget || (event.target.closest("button:not(:disabled)") && event.target.closest("dialog") === event.currentTarget)) event.currentTarget.close(); }}>
         <div className="mobile-actions-panel">
           <div className="mobile-actions-heading"><h2 id="mobile-actions-title">Map actions</h2><button className="icon-button" aria-label="Close map actions" onClick={() => actionsDialogRef.current?.close()}><X size={20} /></button></div>
-          <div className="mobile-actions-list">{secondaryActions}</div>
+          <div className="mobile-actions-list">
+            {mobile && !exportOpen && <label className="mobile-playback-speed">Playback speed{playbackSpeed}</label>}
+            {mobile && battleControls}
+            {mobile && !exportOpen && <>{movementControl}{pictureControl}{fullscreenControl}</>}
+            {secondaryActions}
+          </div>
         </div>
       </dialog>
       <header className="app-header">
@@ -1254,28 +1341,13 @@ export default function App() {
             <span>{mapFileName || "My field map"}</span>
             <Pencil size={13} />
           </button>
-          <span className="workspace-tag">PERSONAL WORKSPACE</span>
           <div className="header-actions">
-            <button
-              className="text-button header-play-button"
-              disabled={!ready || !range || mapStatus !== "ready" || exportOpen}
-              onClick={playback.playing ? playback.pause : () => beginPreview(playback.play)}
-              aria-label={playback.playing ? "Pause historical timeline" : "Play historical timeline"}
-              title={range ? "Historical timeline" : "Add a movement route to enable playback"}
-            >
-              {playback.playing ? <Pause size={18} /> : <Play size={18} />}
-              <span>{playback.playing ? "Pause" : "Play"}</span>
-            </button>
-            <button
-              className="text-button header-edit-button"
-              disabled={exportOpen}
-              onClick={() => { if (mapEdit) { if (!discardAllowed()) return; resetEditor(); } setFeatureMenu(null); playback.edit(); }}
-              aria-label="Edit map"
-              title="Edit map"
-            >
-              <Pencil size={18} />
-              <span>Edit map</span>
-            </button>
+            {!exportOpen && <>
+              <button type="button" className="text-button header-play-button" disabled={mapStatus !== "ready" || battle.busy || !range} onClick={playBattleReplay} aria-label={playback.playing ? "Pause movement routes" : "Play movement routes"}>{playback.playing ? <Pause size={17} /> : <Play size={17} />}<span>{playback.playing ? "Pause" : "Play"}</span></button>
+              {!mobile && playbackSpeed}
+              <button type="button" className="text-button" disabled={mapStatus !== "ready" || battle.busy || (!range && battle.mode !== "command")} onClick={() => { setReplayRequested(false); if (battle.mode === "command") battle.edit(); beginPreview(playback.restart); }} aria-label="Reset playback"><RotateCcw size={17} /><span>Reset</span></button>
+            </>}
+            {!mobile && battleControls}
             <div className="desktop-header-actions">{secondaryActions}</div>
             <button className="text-button mobile-actions-button" aria-label="Open map actions" aria-haspopup="dialog" aria-controls="mobile-map-actions" onClick={() => actionsDialogRef.current?.showModal()}><Menu size={20} /><span>More</span></button>
             <input
@@ -1301,13 +1373,6 @@ export default function App() {
           inert={!panelOpen}
         >
           <div className="sidebar-heading">
-            <div>
-              <p className="eyebrow">MAKE YOUR MARK</p>
-              <h2>
-                Your locations{" "}
-                <span>{project.badges.length.toString().padStart(2, "0")}</span>
-              </h2>
-            </div>
             <button
               className="icon-button"
               title="Collapse panel"
@@ -1317,37 +1382,43 @@ export default function App() {
               <PanelLeftClose size={19} />
             </button>
           </div>
-          {playback.preview && !mapEdit && <p className="sidebar-preview-note">Right-click a badge or equipment to edit it or start a movement from this date. Choose <strong>Edit map</strong> for the main editor.</p>}
-          <div className="sidebar-content" inert={(playback.preview && mapEdit?.ui !== "full") || exportOpen || (!!mapEdit && mapEdit.ui !== "full")}>
-            <div className="sidebar-tabs" aria-label="Map features">{["badges", "units", "lines", "paint"].map((tab) => <button key={tab} className={section === tab ? "active" : ""} onClick={() => switchSection(tab)}>{tab === "badges" ? "Badges" : tab === "units" ? "Equipment" : tab === "paint" ? "Paint" : "Lines & text"} <span>{project[tab === "paint" ? "paintStrokes" : tab].length}</span></button>)}</div>
+          {battle.mode === "edit" && playback.preview && !mapEdit && null}
+          <GroupTabs project={visibleProject} activeId={activeGroupId} onSelect={chooseGroup} onChange={changeGroups} locked={!ready || battle.busy || battle.mode !== "edit" || exportOpen || !!draft || !!unitDraft || !!lineDraft} />
+          {battle.mode === "edit" && <div className="sidebar-content" onPointerDownCapture={resumeSidebarEditing} onFocusCapture={resumeSidebarEditing} inert={(playback.playing && mapEdit?.ui !== "full") || exportOpen || (!!mapEdit && mapEdit.ui !== "full")}>
+            <div className="sidebar-tabs" aria-label="Map features">{[
+              { id: "badges", label: "Badges", icon: HardHat, description: "Add a badge, upload a flag, and choose a spot on the map. Customize its symbol, size, stars, and troop count. Add dated route stops to move it, change troop numbers, or play effects over time." },
+              { id: "units", label: "Equipment", icon: Truck, description: "Place tanks, warships, artillery, troops, or custom equipment images. Set their location and add dated routes, effects, and targets. Preset images appear in full; custom images are cropped to a circle." },
+              { id: "text", label: "Text", icon: Type, description: "Add a text label to the map. Click to place it, then drag to reposition it. Choose when it appears or disappears during playback." },
+              { id: "lines", label: "Lines", icon: Route, description: "Trace boundaries and paths by clicking points on the map. Finish drawing, then drag handles to reshape the line or add bends. Lines appear red on Map and white on Satellite." },
+              { id: "paint", label: "Paint", icon: Paintbrush, description: "Drag on the map to color an area. Choose a brush size, shape, color, and transparency, or erase painted areas. Paint stays attached to the map as you zoom." },
+            ].map(({ id, label, description, icon: Icon }) => <HelpTooltip key={id} label={label} description={description}><button className={section === id ? "active" : ""} aria-label={label} aria-description={description} aria-pressed={section === id} onClick={() => switchSection(id)}><Icon size={19} aria-hidden="true" /></button></HelpTooltip>)}</div>
             {section === "paint" ? <div className="paint-controls">
-              <p className="intro-copy">Drag on the map to color an area. Paint stays attached to the map as you zoom.</p>
+              
               <div className="paint-options" aria-label="Paint tool">{["paint", "erase"].map((tool) => <button key={tool} className={brush.tool === tool ? "active" : ""} onClick={() => setBrush((value) => ({ ...value, tool }))}>{tool === "paint" ? "Paint" : "Eraser"}</button>)}</div>
               <div className="paint-options" aria-label="Brush size">{["small", "medium", "big"].map((size) => <button key={size} className={brush.size === size ? "active" : ""} onClick={() => setBrush((value) => ({ ...value, size }))}>{size[0].toUpperCase() + size.slice(1)}</button>)}</div>
               <div className="paint-options" aria-label="Brush shape">{["circle", "rectangle"].map((shape) => <button key={shape} className={brush.shape === shape ? "active" : ""} onClick={() => setBrush((value) => ({ ...value, shape }))}>{shape[0].toUpperCase() + shape.slice(1)}</button>)}</div>
               <div className="paint-swatches" aria-label="Paint colors">{PAINT_COLORS.map(({ name, value }) => <button key={value} type="button" aria-label={name} aria-pressed={brush.color === value} className={brush.color === value ? "active" : ""} style={{ backgroundColor: value }} onClick={() => setBrush((current) => ({ ...current, color: value }))} />)}</div>
               <label className="paint-color">Color <input type="color" value={brush.color} onChange={(event) => setBrush((value) => ({ ...value, color: event.target.value }))} /></label>
               <label className="paint-opacity">Transparency <span>{Math.round(brush.opacity * 100)}% opacity</span><input type="range" min="10" max="100" step="5" value={Math.round(brush.opacity * 100)} onChange={(event) => setBrush((value) => ({ ...value, opacity: Number(event.target.value) / 100 }))} /></label>
-              <button className="primary add-button" disabled={mapStatus !== "ready" || playback.preview || exportOpen} onClick={() => { setMode(mode === "paint" ? "navigate" : "paint"); }}>{mode === "paint" ? "Done painting" : "Start painting"}</button>
-              <div className="paint-options"><button disabled={!project.paintStrokes.length} onClick={() => setProject((current) => ({ ...current, paintStrokes: current.paintStrokes.slice(0, -1) }))}>Undo</button><button disabled={!project.paintStrokes.length} onClick={() => { if (window.confirm("Clear all paint from this map?")) setProject((current) => ({ ...current, paintStrokes: [] })); }}>Clear paint</button></div>
-            </div> : lineDraft ? <LineEditor line={lineDraft} onChange={updateLine} mode={mode} onMode={changeMode} onSave={saveLine} onCancel={() => { if (discardAllowed()) resetEditor(); }} onDelete={project.lines.some((line) => line.id === lineDraft.id) ? deleteLine : null} selectedPoint={selectedPoint} onSelectedPoint={setSelectedPoint} error={formError} mapReady={mapStatus === "ready"} isSatellite={isSatellite} /> : section === "lines" ? <>
-              <p className="intro-copy">Trace boundaries and paths. Lines appear red on Map and white on Satellite.</p>
+              <button className="primary add-button" disabled={mapStatus !== "ready" || playback.playing || exportOpen} onClick={() => { setMode(mode === "paint" ? "navigate" : "paint"); }}>{mode === "paint" ? "Done painting" : "Start painting"}</button>
+              <div className="paint-options"><button disabled={!groupItems("paintStrokes").length} onClick={() => setProject((current) => ({ ...current, paintStrokes: current.paintStrokes.filter((stroke) => stroke.id !== current.paintStrokes.findLast((item) => item.groupId === activeGroupId)?.id) }))}>Undo</button><button disabled={!groupItems("paintStrokes").length} onClick={() => { if (window.confirm("Clear all paint from this group?")) setProject((current) => ({ ...current, paintStrokes: current.paintStrokes.filter((stroke) => stroke.groupId !== activeGroupId) })); }}>Clear paint</button></div>
+              {project.groups.length > 1 && <label className="field-label">Move this group's paint<select value={paintDestination} onChange={(event) => setPaintDestination(event.target.value)}><option value="">Choose a group…</option>{project.groups.filter((group) => group.id !== activeGroupId).map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select><button disabled={!groupItems("paintStrokes").length || !project.groups.some((group) => group.id === paintDestination && group.id !== activeGroupId)} onClick={() => { setProject((current) => ({ ...current, paintStrokes: current.paintStrokes.map((stroke) => stroke.groupId === activeGroupId ? { ...stroke, groupId: paintDestination } : stroke) })); setPaintDestination(""); }}>Move paint</button></label>}
+            </div> : lineDraft ? <><label className="field-label">Group<select value={lineDraft.groupId} onChange={(event) => updateLine({ groupId: event.target.value })}>{project.groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label><LineEditor line={lineDraft} onChange={updateLine} mode={mode} onMode={changeMode} onSave={saveLine} onCancel={() => { if (discardAllowed()) resetEditor(); }} onDelete={project.lines.some((line) => line.id === lineDraft.id) ? deleteLine : null} selectedPoint={selectedPoint} onSelectedPoint={setSelectedPoint} error={formError} mapReady={mapStatus === "ready"} isSatellite={isSatellite} /></> : section === "lines" || section === "text" ? <>
+              
               <button className="primary add-button" disabled={!ready || mapStatus !== "ready"} onClick={() => addLine()}><Plus size={18} /> Draw line</button>
               <button className="secondary add-button" disabled={!ready || mapStatus !== "ready"} onClick={() => addLine("text")}><Plus size={18} /> Add text label</button>
-              {mapStatus !== "ready" && <p className="field-hint">Connect Google Maps to draw new lines.</p>}
-              {!project.lines.length ? <p className="field-hint">Click points on the map, finish drawing, then save your line.</p> : <ul className="badge-list">{project.lines.map((line) => <li key={line.id}><button className="badge-row" onClick={() => selectLine(line.id)} aria-label={`Edit line ${line.name}`}><span className="line-list-swatch" style={{ borderTopStyle: line.style, borderTopWidth: line.width, borderTopColor: isSatellite ? "#fff" : "#d62828", background: isSatellite ? "#46566a" : "transparent" }} /><div className="badge-row-copy"><strong>{line.name}</strong><span>{line.kind === "text" ? "Text label" : `${line.path.length} points · ${line.style}`}</span></div><ChevronRight size={15} /></button></li>)}</ul>}
-            </> : unitDraft ? <UnitEditor unit={unitDraft} effectTargets={[...project.badges, ...project.units]} editing={project.units.some((item) => item.id === unitDraft.id)} onChange={updateUnit} onImage={(event) => uploadFeatureImage(event, "unit")} onSave={saveUnit} onCancel={() => { if (discardAllowed()) resetEditor(); }} onDelete={deleteUnit} onClone={cloneUnit} onPlace={() => { setMode(mode === "placeUnit" ? "navigate" : "placeUnit"); if (mode !== "placeUnit" && window.matchMedia("(max-width: 700px)").matches) setPanelOpen(false); }} onMode={changeMode} onFocus={(stop) => { const position = coordinates(stop.lat, stop.lng); if (position) mapRef.current?.focus(position); }} onPickTargetLocation={pickTargetLocation} targetLocationStopId={targetLocationStopId} onPickRouteLocation={pickRouteLocation} routeLocationStopId={routeLocationStopId} mode={mode} mapReady={mapStatus === "ready"} uploading={uploading} error={formError} /> : section === "units" ? <>
-              <p className="intro-copy">Place tanks, warships, artillery, troops, and custom equipment images. Give each one a route through time.</p>
+              {mapStatus !== "ready" && null}
+              {!groupItems("lines").length ? null : <ul className="feature-card-list">{groupItems("lines").filter((line) => section === "text" ? line.kind === "text" : line.kind !== "text").map((line) => <li key={line.id}><FeatureCard name={line.name} active={selectedId === line.id} onClick={() => selectLine(line.id)} visual={line.kind === "text" ? <Type size={32} /> : <Route size={32} />} details={[["Type", line.kind === "text" ? "Text label" : "Line"], ["Points", line.path.length], ["Style", line.style]]} /></li>)}</ul>}
+            </> : unitDraft ? <UnitEditor groups={project.groups} unit={unitDraft} effectTargets={[...project.badges, ...project.units]} editing={project.units.some((item) => item.id === unitDraft.id)} onChange={updateUnit} onImage={(event) => uploadFeatureImage(event, "unit")} onSave={saveUnit} onCancel={() => { if (discardAllowed()) resetEditor(); }} onDelete={deleteUnit} onClone={cloneUnit} onPlace={() => { setMode(mode === "placeUnit" ? "navigate" : "placeUnit"); if (mode !== "placeUnit" && window.matchMedia("(max-width: 700px)").matches) setPanelOpen(false); }} onMode={changeMode} onFocus={(stop) => { const position = coordinates(stop.lat, stop.lng); if (position) mapRef.current?.focus(position); }} onPickTargetLocation={pickTargetLocation} targetLocationStopId={targetLocationStopId} onPickRouteLocation={pickRouteLocation} routeLocationStopId={routeLocationStopId} mode={mode} mapReady={mapStatus === "ready"} uploading={uploading} error={formError} /> : section === "units" ? <>
+              
               <button className="primary add-button" disabled={!ready} onClick={addUnit}><Plus size={18} /> Add equipment</button>
-              <div className="list-heading"><span>MAP EQUIPMENT</span><span>{project.units.length} / {MAX_UNITS}</span></div>
-              {!project.units.length ? <p className="field-hint">Add equipment, choose its location, then create a movement route.</p> : <ul className="badge-list">{project.units.map((unit) => <li key={unit.id}><button className={`badge-row ${selectedId === unit.id ? "active" : ""}`} onClick={() => selectUnit(unit.id)}><span className="unit-list-mark">{unitImage(unit) ? <img src={unitImage(unit)} alt="" /> : unit.kind === "other" ? "✦" : unit.kind === "warship" ? "◢" : unit.kind === "artillery" ? "✹" : "●"}</span><div className="badge-row-copy"><strong>{unit.name}</strong><span>{unit.kind} · {unit.lat.toFixed(4)}, {unit.lng.toFixed(4)}</span></div><ChevronRight size={15} /></button></li>)}</ul>}
+              <div className="list-heading"><span>MAP EQUIPMENT</span><span>{groupItems("units").length} / {MAX_UNITS}</span></div>
+              <label className="field-label card-search">Search equipment<input type="search" placeholder="Search equipment by name…" value={cardSearch.units} onChange={(event) => setCardSearch((current) => ({ ...current, units: event.target.value }))} /></label>
+              {groupItems("units").length > 0 && !filteredCards("units").length && <p className="field-hint" role="status">No equipment matches your search.</p>}
+              {!groupItems("units").length ? null : <ul className="feature-card-list">{filteredCards("units").map((unit) => <li key={unit.id}><FeatureCard name={unit.name} image={unitImage(unit)} visual={<Truck size={32} />} active={selectedId === unit.id} onClick={() => selectUnit(unit.id)} details={[["Stars", unit.stars ?? 0], ["Quantity", unit.quantity ?? 1], ["Type", unit.kind]]} /></li>)}</ul>}
             </> : !draft ? (
               <>
-                <p className="intro-copy">
-                  A flag, a name, a place.
-                  <br />
-                  Make the map your own.
-                </p>
+                
                 <button
                   className="primary add-button"
                   disabled={!ready}
@@ -1358,10 +1429,12 @@ export default function App() {
                 <div className="list-heading">
                   <span>MAP BADGES</span>
                   <span>
-                    {project.badges.length} / {MAX_BADGES}
+                    {groupItems("badges").length} / {MAX_BADGES}
                   </span>
                 </div>
-                {!project.badges.length ? (
+                <label className="field-label card-search">Search badges<input type="search" placeholder="Search badges by name…" value={cardSearch.badges} onChange={(event) => setCardSearch((current) => ({ ...current, badges: event.target.value }))} /></label>
+                {groupItems("badges").length > 0 && !filteredCards("badges").length && <p className="field-hint" role="status">No badges match your search.</p>}
+                {!groupItems("badges").length ? (
                   <div className="empty-state">
                     <div className="empty-illustration">
                       <span className="orbit orbit-one" />
@@ -1369,60 +1442,24 @@ export default function App() {
                       <MapPin size={35} strokeWidth={1.3} />
                       <span className="orbit-dot" />
                     </div>
-                    <h3>Your first mark starts here</h3>
-                    <p>
-                      Add a badge, upload a flag, and choose a spot on the map.
-                    </p>
-                    <div className="empty-note">
-                      <span>01</span> ADD <i /> <span>02</span> PLACE <i />{" "}
-                      <span>03</span> SAVE
-                    </div>
+                    
+                    
+                    
                   </div>
                 ) : (
-                  <ul className="badge-list">
-                    {project.badges.map((badge, index) => (
-                      <li key={badge.id}>
-                        <button
-                          className={`badge-row ${selectedId === badge.id ? "active" : ""}`}
-                          onClick={() => selectBadge(badge.id)}
-                          title={`Edit ${badge.label}`}
-                          aria-label={`Edit badge ${badge.label}`}
-                        >
-                          <div className="list-flag">
-                            <img src={badge.flag} alt="" />
-                          </div>
-                          <div className="badge-row-copy">
-                            <strong>{badge.label}</strong>
-                            <span>
-                              {badge.lat.toFixed(4)}, {badge.lng.toFixed(4)}
-                            </span>
-                          </div>
-                          <span className="row-number">
-                            {String(index + 1).padStart(2, "0")}
-                          </span>
-                          <ChevronRight size={15} />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                  <ul className="feature-card-list">{filteredCards("badges").map((badge) => <li key={badge.id}><FeatureCard name={badge.label} badge={badge} active={selectedId === badge.id} onClick={() => selectBadge(badge.id)} details={[["Stars", badge.stars ?? 0], ["Troops", badge.troopCount ?? 0]]} /></li>)}</ul>
                 )}
-                <div className="field-note">
-                  <Compass size={20} strokeWidth={1.4} />
-                  <div>
-                    <strong>A little room to explore.</strong>
-                    <p>Pan, zoom, and mark the places that matter to you.</p>
-                  </div>
-                </div>
+                
               </>
             ) : (
-              <form className="editor" onSubmit={commitBadge}>
+              <form className="editor feature-editor" onSubmit={commitBadge}>
                 <div className="editor-title">
-                  <h3>{editing ? "Edit badge" : "New badge"}</h3>
+                  {!editing && <h3>New badge</h3>}
                   <div className="editor-title-actions">
-                    {editing && <button type="button" className="badge-settings-reset" onClick={resetBadgeSettings} title="Reset badge settings">
-                      <RotateCcw size={14} /> <span>Reset settings</span>
+                    {editing && <button type="button" className="badge-settings-reset badge-delete-button" onClick={() => deleteBadgeDialogRef.current?.showModal()} title="Delete badge" aria-haspopup="dialog">
+                      <Trash2 size={14} /> <span>Delete</span>
                     </button>}
-                    {editing && <button type="button" className="badge-settings-reset" onClick={cloneBadge} title="Create a copy of this badge">
+                    {editing && <button type="button" className="badge-settings-reset badge-clone-button" onClick={cloneBadge} title="Create a copy of this badge">
                       <Copy size={14} /> <span>Clone badge</span>
                     </button>}
                     <button
@@ -1480,7 +1517,7 @@ export default function App() {
                           ? "Change flag image"
                           : "Choose a flag image"}
                     </strong>
-                    <small>PNG, JPG or WebP · up to 5 MB</small>
+                    
                   </span>
                   <Upload size={15} />
                   <input
@@ -1491,49 +1528,12 @@ export default function App() {
                     onChange={uploadFlag}
                   />
                 </label>
-                <fieldset className="symbol-field">
-                  <legend className="field-label">Badge symbol</legend>
-                  <div className="symbol-options">
-                    {BADGE_SYMBOLS.map((symbol) => (
-                      <label
-                        className={`symbol-option ${draft.symbol === symbol.value ? "active" : ""}`}
-                        key={symbol.value}
-                      >
-                        <input
-                          type="radio"
-                          name="badge-symbol"
-                          value={symbol.value}
-                          checked={draft.symbol === symbol.value}
-                          onChange={() => updateDraft({ symbol: symbol.value })}
-                        />
-                        <span className="symbol-option-art" aria-hidden="true">
-                          {symbol.paths.length ? (
-                            <svg viewBox={symbol.viewBox}>
-                              {symbol.paths.map((path) => (
-                                <path
-                                  key={path.d}
-                                  fill="currentColor"
-                                  fillRule={path.fillRule}
-                                  d={path.d}
-                                />
-                              ))}
-                            </svg>
-                          ) : (
-                            <span className="symbol-none-mark">—</span>
-                          )}
-                        </span>
-                        <span className="symbol-option-label">
-                          {symbol.label}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-                {draft.symbol === "custom" && <label className="upload-zone" htmlFor="symbol-image"><ImagePlus size={22} /><span><strong>{draft.symbolImage ? "Change symbol image" : "Choose symbol image"}</strong><small>PNG, JPG or WebP · up to 5 MB</small></span><Upload size={15} /><input id="symbol-image" type="file" accept="image/png,image/jpeg,image/webp" disabled={uploading} onChange={(event) => uploadFeatureImage(event, "badge")} /></label>}
+                <SymbolPicker value={draft.symbol} image={draft.symbolImage} onSelect={(symbol) => updateDraft({ symbol })} onImage={(event) => uploadFeatureImage(event, "badge")} uploading={uploading} error={formError} />
                 <label className="field-label">Stars <span>{draft.stars ?? 0} / 5</span><select value={draft.stars ?? 0} onChange={(event) => updateDraft({ stars: Number(event.target.value) })}>{[0, 1, 2, 3, 4, 5].map((count) => <option key={count} value={count}>{count === 0 ? "0 · No stars" : `${count} · ${"★".repeat(count)}`}</option>)}</select></label>
+                <ForceSettings feature={draft} groups={project.groups} onChange={updateDraft} />
                 <label className="field-label">Troop number<input type="number" min="0" max={Number.MAX_SAFE_INTEGER} step="1" required value={draft.troopCount ?? 0} onChange={(event) => { const troopCount = Number(event.target.value); if (Number.isSafeInteger(troopCount) && troopCount >= 0) updateDraft({ troopCount, route: draft.route.map((stop, index) => index === 0 ? { ...stop, troopCount } : stop) }); }} /></label>
-                <p className="field-hint">Hidden when 0. Set troop numbers at route stops to increase or decrease them during movement.</p>
-                <SizePicker value={draft.size} onChange={(size) => updateDraft({ size })} />
+                
+                <SizePicker formation value={draft.size} onChange={(size) => updateDraft({ size, troopCount: BADGE_FORMATIONS[size].troops })} />
                 <div className="section-rule" />
                 <div className="field-label location-title">
                   Position{" "}
@@ -1548,11 +1548,7 @@ export default function App() {
                   <Crosshair size={17} />
                   {placing ? "Click a location on the map" : "Choose on map"}
                 </button>
-                {mapStatus !== "ready" && (
-                  <p className="field-hint">
-                    Connect the map, or enter coordinates below.
-                  </p>
-                )}
+                {mapStatus !== "ready" && null}
                 <div className="coordinate-fields">
                   <label>
                     Latitude
@@ -1587,24 +1583,16 @@ export default function App() {
                     />
                   </label>
                 </div>
-                {draft.route.length > 0 && <p className="field-hint">Edit stop A below to change this badge’s starting position.</p>}
+                <RouteEditor badge={draft} onChange={updateDraft} mapReady={mapStatus === "ready"} mode={mode} onMode={changeMode} onFocus={(stop) => { const position = coordinates(stop.lat, stop.lng); if (position) mapRef.current?.focus(position); }} onPickTargetLocation={pickTargetLocation} targetLocationStopId={targetLocationStopId} onPickRouteLocation={pickRouteLocation} routeLocationStopId={routeLocationStopId} effectTargets={[...project.badges, ...project.units]} />
                 <VisibilityEditor visibility={draft.visibility} onChange={(visibility) => updateDraft({ visibility })} />
-                <RouteEditor badge={draft} effectTargets={[...project.badges, ...project.units]} onChange={updateDraft} mapReady={mapStatus === "ready"} mode={mode} onMode={changeMode} onPickTargetLocation={pickTargetLocation} targetLocationStopId={targetLocationStopId} onPickRouteLocation={pickRouteLocation} routeLocationStopId={routeLocationStopId} onFocus={(stop) => { const position = coordinates(stop.lat, stop.lng); if (position) mapRef.current?.focus(position); }} />
                 {formError && (
                   <p className="form-error" role="alert">
                     <AlertCircle size={15} />
                     {formError}
                   </p>
                 )}
+
                 <div className="editor-actions">
-                  <button
-                    className="primary"
-                    type="submit"
-                    disabled={uploading}
-                  >
-                    <Check size={17} />
-                    {editing ? "Save changes" : "Save badge"}
-                  </button>
                   <button
                     className="secondary"
                     type="button"
@@ -1614,39 +1602,19 @@ export default function App() {
                   >
                     Cancel
                   </button>
-                </div>
-                {editing && (
                   <button
-                    className="delete-button"
-                    type="button"
-                    onClick={deleteBadge}
+                    className="primary"
+                    type="submit"
+                    disabled={uploading}
                   >
-                    <Trash2 size={15} />
-                    Delete badge
+                    <Check size={17} />
+                    {editing ? "Save changes" : "Save badge"}
                   </button>
-                )}
+                </div>
               </form>
             )}
           </div>
-          <footer
-            className={`sidebar-footer ${saveStatus === "error" ? "save-error" : ""}`}
-            aria-live="polite"
-          >
-            <span className="status-dot" />
-            <div>
-              <strong>
-                {saveStatus === "saved"
-                  ? "Saved on this device"
-                  : saveStatus === "saving"
-                    ? "Saving your map…"
-                    : saveStatus === "error"
-                      ? "Not saved · export a backup"
-                      : "Opening your workspace…"}
-              </strong>
-              <span>No account needed. Just your map.</span>
-            </div>
-            {saveStatus === "saved" && <Check size={15} />}
-          </footer>
+          }
         </aside>
 
         <section ref={mapStageRef} className={`map-stage ${range ? "has-timeline" : ""}${exportOpen ? " video-framing" : ""}`} aria-label="Map workspace">
@@ -1662,29 +1630,39 @@ export default function App() {
               key={exportOpen ? `${exportKind}-${exportOrientation}` : "editor"}
               ref={mapRef}
               initialView={exportOpen ? exportCamera : editingView.current ?? initialView}
-              badges={project.badges}
-              units={project.units}
+              groups={visibleProject.groups}
+              showAllMovement={showAllMovement}
+              battleForces={battle.mode === "command" ? battle.frame?.forces : undefined}
+              battleTime={battle.frame?.at}
+              battleReplay={battle.mode === "replay" ? { ...battle.replay, snapshot: visibleProject } : undefined}
+              selectedIds={battle.selectedIds}
+              activeGroupId={activeGroupId}
+              onCommandSelect={battle.select}
+              onCommand={battle.command}
+              onCommandStop={battle.stop}
+              badges={visibleProject.badges}
+              units={visibleProject.units}
               draft={mapEdit && mapEdit.ui !== "full" && mapEdit.featureType === "badge" ? mapEdit.feature : draft}
               unitDraft={mapEdit && mapEdit.ui !== "full" && mapEdit.featureType === "unit" ? mapEdit.feature : unitDraft}
               targetLocationStopId={targetLocationStopId}
-              selectedId={exportOpen ? null : selectedId}
+              selectedId={exportOpen || battle.mode !== "edit" ? null : selectedId}
               cleanExport={exportOpen}
-              mode={exportOpen ? "export" : mode}
+              mode={exportOpen ? "export" : battle.mode === "command" ? "command" : battle.mode === "replay" ? "replay" : mode}
               preview={mapEdit ? false : playback.preview}
               playing={playback.playing}
               previewTime={playback.cursor}
               authoringTime={mapEdit?.time}
-              onFeatureContextMenu={exportOpen ? undefined : openFeatureMenu}
+              onFeatureContextMenu={exportOpen || battle.mode !== "edit" ? undefined : openFeatureMenu}
               onEffectTargetSelect={exportOpen ? undefined : openEffectTargetMenu}
               animationRange={range}
               animationDuration={project.playbackDuration}
-              lines={project.lines}
-              paintStrokes={project.paintStrokes}
-              brush={brush}
+              lines={visibleProject.lines}
+              paintStrokes={visibleProject.paintStrokes}
+              brush={{ ...brush, groupId: activeGroupId }}
               onPaintStroke={(stroke) => setProject((current) => {
                 const pointCount = current.paintStrokes.reduce((count, item) => count + item.points.length, stroke.points.length);
                 if (current.paintStrokes.length >= MAX_PAINT_STROKES || pointCount > MAX_PAINT_POINTS) { setMessage({ error: true, text: "Paint limit reached. Undo or clear paint to continue." }); return current; }
-                return { ...current, paintStrokes: [...current.paintStrokes, stroke] };
+                return { ...current, paintStrokes: [...current.paintStrokes, { ...stroke, groupId: activeGroupId }] };
               })}
               lineDraft={lineDraft}
               onPoint={mapPoint}
@@ -1702,11 +1680,12 @@ export default function App() {
             {videoOpen && videoShowDate && playback.preview && range && <time className="video-date-stamp">{videoDate(playback.cursor)}</time>}
             </div>
           )}
-          {!exportOpen && <MapFeatureControls menu={featureMenu} session={mapEdit} targets={[...project.badges, ...project.units]} error={mapEdit?.error || formError}
+          {!exportOpen && battle.mode === "edit" && <MapFeatureControls menu={featureMenu} session={mapEdit} targets={[...project.badges, ...project.units]} error={mapEdit?.error || formError}
             onDismiss={dismissFeatureMenu} onEdit={() => beginMapEdit("edit")} onMovement={() => beginMapEdit("movement")}
             onEffect={chooseMovementEffect}
             onChange={updateMapEdit} onStart={startMapMovement} onSave={saveMapEdit}
             onCancel={() => { if (discardAllowed()) resetEditor(); }} onFullEditor={openFullMapEditor} />}
+          {!exportOpen && battle.mode === "command" && <BattlePanel battle={battle} activeGroupId={activeGroupId} onFocus={(force) => mapRef.current?.focus(force)} />}
           {!exportOpen && <div className="map-toolbar">
             {!panelOpen && !mapFullscreen && (
               <button
@@ -1744,6 +1723,7 @@ export default function App() {
               <Crosshair size={17} />
               <span>Show all features</span>
             </button>
+            {!mobile && movementControl}
             <div className="map-type-controls" aria-label="Map rotation">
               <button disabled={mapStatus !== "ready"} onClick={() => mapRef.current?.rotate(-15)} aria-label="Rotate map left" title="Rotate map left">
                 <RotateCcw size={15} />
@@ -1755,20 +1735,8 @@ export default function App() {
                 <RotateCcw size={15} style={{ transform: "scaleX(-1)" }} />
               </button>
             </div>
-            <button className="map-button image-export-toolbar-button" disabled={!ready || mapStatus !== "ready" || pictureExporting || exportOpen} onClick={() => openExport("image")} aria-label="Download map picture" title="Download map picture">
-              {pictureExporting ? <LoaderCircle size={16} className="spin" /> : <ImageDown size={16} />}
-              <span>{pictureExporting ? "Creating picture…" : "Download picture"}</span>
-            </button>
-            <button
-              className="map-button fullscreen-button"
-              onClick={() => setMapFullscreen((current) => !current)}
-              aria-label={mapFullscreen ? "Exit full screen map" : "Show full screen map"}
-              aria-pressed={mapFullscreen}
-              title={mapFullscreen ? "Exit full screen map (Esc)" : "Show full screen map"}
-            >
-              {mapFullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-              <span>{mapFullscreen ? "Exit full screen" : "Full screen"}</span>
-            </button>
+            {!mobile && <>{pictureControl}{fullscreenControl}</>}
+            {mobile && mapFullscreen && <button className="map-button mobile-actions-button" aria-label="Open map actions" aria-haspopup="dialog" aria-controls="mobile-map-actions" onClick={() => actionsDialogRef.current?.showModal()}><Menu size={20} /><span>More</span></button>}
           </div>}
           {mapStatus !== "ready" && (
             <div className="setup-overlay">

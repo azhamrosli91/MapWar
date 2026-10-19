@@ -6,7 +6,7 @@ function pickerTime(time) {
   return new Date(time).toISOString().slice(0, 16);
 }
 
-export default function Timeline({ range, duration, onDuration, playback, onSeek, onRestart, disabled, minimized, onMinimizedChange }) {
+export default function Timeline({ range, duration, onDuration, playback, onSeek, onRestart, disabled, minimized, onMinimizedChange, readOnly = false }) {
   const [selectedTime, setSelectedTime] = useState(null);
   const [dateError, setDateError] = useState("");
   if (!range) return null;
@@ -45,6 +45,7 @@ export default function Timeline({ range, duration, onDuration, playback, onSeek
       <button className="timeline-date-button" onClick={openDatePicker} disabled={disabled} aria-label={`Choose route date and time, ${dateTime}${moon ? ", Night" : ""}`} aria-expanded={selectedTime !== null} aria-controls="route-date-picker" title="Show route positions by date and time">
         <time>{dateTime}</time>{moon}<ChevronDown size={16} />
       </button>
+      {readOnly && <button type="button" className="icon-button" onClick={() => onMinimizedChange(false)} aria-label="Expand historical timeline" title="Expand timeline"><ChevronDown size={16} /></button>}
       {datePicker}
     </section>
   );
@@ -60,7 +61,7 @@ export default function Timeline({ range, duration, onDuration, playback, onSeek
       <div className="timeline-controls">
         <button className="icon-button" onClick={onRestart} disabled={disabled} aria-label="Restart animation"><RotateCcw size={17} /></button>
         <input type="range" aria-label="Historical date and time" aria-valuetext={formatScenarioTime(playback.cursor)} min={range.start} max={range.end} step="any" value={playback.cursor} disabled={disabled} onChange={(event) => onSeek(Number(event.target.value))} />
-        <label className="duration-field">Length (sec)<input type="number" min="5" max="600" step="1" key={duration} defaultValue={duration} disabled={playback.preview} onBlur={(event) => { const value = Number(event.target.value); if (event.target.value && Number.isFinite(value) && value >= 5 && value <= 600) onDuration(value); else event.target.value = duration; }} /></label>
+        {!readOnly && <label className="duration-field">Length (sec)<input type="number" min="5" max="600" step="1" key={duration} defaultValue={duration} disabled={playback.preview} onBlur={(event) => { const value = Number(event.target.value); if (event.target.value && Number.isFinite(value) && value >= 5 && value <= 600) onDuration(value); else event.target.value = duration; }} /></label>}
       </div>
       <div className="timeline-range"><span>{formatScenarioTime(range.start)}</span><span>{formatScenarioTime(range.end)}</span></div>
     </section>

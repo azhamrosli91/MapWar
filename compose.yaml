@@ -15,6 +15,10 @@ services:
       PORT: "4173"
       ALLOWED_HOSTS: war2.pinangemas.com.my
       RENDER_ORIGIN: https://war2.pinangemas.com.my
+      PREVIEW_ADMIN_KEY: ${PREVIEW_ADMIN_KEY:-}
+      PREVIEW_STORAGE_DIR: /app/data/previews
+    volumes:
+      - preview-data:/app/data
     ports:
       - "127.0.0.1:4173:4173"
     healthcheck:
@@ -28,4 +32,7 @@ services:
       options:
         max-size: 10m
         max-file: "3"
+
+volumes:
+  preview-data:
 

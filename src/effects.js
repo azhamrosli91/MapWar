@@ -5,10 +5,12 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 const SHOT_MS = 260;
 const SHOT_OFFSETS = [0, 75, 150, 225, 300, 375];
 const FIRING_REPEAT_MS = 600;
-const EFFECT_CYCLES = { booming: 1350, demolish: 1500, kills: 1250, crack: 800 };
+const EFFECT_CYCLES = { booming: 1350, demolish: 1500, kills: 1250, crack: 800, sword: 900, archer: 1100 };
 const IMPACT_DURATION_MS = 3000;
 const EFFECTS_WITH_IMPACTS = ["firing", "booming", "demolish"];
 const EFFECT_STYLES = {
+  sword: { fill: "#c8d7e5", ink: "#ffffff", glow: "#ffe09b" },
+  archer: { fill: "#92683e", ink: "#fff4d6", glow: "#d8c28d" },
   booming: { fill: "#b55b24", ink: "#fff0a3", glow: "#ffb641" },
   demolish: { fill: "#715644", ink: "#fff0d1", glow: "#d2ac83" },
   kills: { fill: "#343948", ink: "#fff1c7", glow: "#c7d0e3" },
@@ -82,7 +84,12 @@ function createEffectSprite(effect, areaTarget = false) {
   const ring = svgElement("circle", { r: 11, fill: style.fill, stroke: style.glow, "stroke-width": 1.8 });
   const glyph = svgElement("text", { x: 0, y: 1, fill: style.ink, "font-size": 18, "font-weight": 700, "font-family": "Arial, Segoe UI Symbol, Segoe UI Emoji, sans-serif", "text-anchor": "middle", "dominant-baseline": "central" });
   glyph.textContent = effectSymbols[effect];
-  group.append(trail, ring, glyph);
+  if (effect === "archer") {
+    group.append(svgElement("path", { d: "M-30 0H15M5-7L16 0 5 7M-22 0-30-6M-22 0-30 6", fill: "none", stroke: style.ink, "stroke-width": 2.5, "stroke-linecap": "round", "stroke-linejoin": "round" }));
+  } else if (effect === "sword") {
+    group.append(svgElement("path", { d: "M-18 16 13-15 20-20 16-10-12 20Z", fill: style.fill, stroke: style.ink, "stroke-width": 1.5 }),
+      svgElement("path", { d: "M-18 9-7 20M-15 18-22 25", fill: "none", stroke: style.glow, "stroke-width": 4, "stroke-linecap": "round" }));
+  } else group.append(trail, ring, glyph);
   const impact = EFFECTS_WITH_IMPACTS.includes(effect) ? createImpactSprite(effect, areaTarget) : null;
   return { group, trail, ring, glyph, effect, impact };
 }
@@ -113,6 +120,7 @@ export function createEffectOverlay(api, onProjectionReady) {
       super();
       this.entries = new Map();
       this.bursts = new Map();
+      this.battleAreas = new Map();
       this.frame = null;
       this.svg = svgElement("svg", { class: "firing-overlay", width: 1, height: 1, "aria-hidden": "true" });
       this.shade = svgElement("rect", { fill: "#071322", opacity: 0, "pointer-events": "none" });
@@ -172,6 +180,8 @@ export function createEffectOverlay(api, onProjectionReady) {
         });
       }
       const active = new Set();
+      const activeAreas = new Set();
+      const overview = (api.map.getZoom() ?? Infinity) <= 10.7;
       const boxes = new Map();
       const boxFor = (entry) => {
         if (!entry) return null;
@@ -197,7 +207,7 @@ export function createEffectOverlay(api, onProjectionReady) {
         const effect = entry.sample?.effect;
         if (!effect || effect === "none" || effect === "surrender" || !entry.visible) continue;
         if (!Number.isFinite(entry.effectElapsed)) continue;
-        const repeatWhileMoving = entry.isMoving && (effect === "firing" || effect === "booming");
+        const repeatWhileMoving = entry.sample.autoCombat || entry.isMoving && (effect === "firing" || effect === "booming");
         const travelDuration = effect === "firing" ? SHOT_OFFSETS.at(-1) + SHOT_MS : EFFECT_CYCLES[effect] * 0.56;
         const hasImpact = EFFECTS_WITH_IMPACTS.includes(effect);
         const impactDuration = hasImpact ? IMPACT_DURATION_MS : 0;
@@ -210,8 +220,12 @@ export function createEffectOverlay(api, onProjectionReady) {
         const targetPoint = targetLocation ? nearestWorldPoint(projection.fromLatLngToDivPixel({ lat: Number(targetLocation.lat), lng: Number(targetLocation.lng) }), viewport) : null;
         const targetBox = targetLocation && targetPoint ? { x: targetPoint.x, y: targetPoint.y, width: 0, height: 0 } : boxFor(target);
         if (!sourceBox || !targetBox) continue;
-        const repeatDuration = effect === "firing" ? FIRING_REPEAT_MS : animationDuration;
-        const phase = repeatWhileMoving ? Math.max(0, entry.effectElapsed) % repeatDuration : Math.max(0, entry.effectElapsed);
+        const repeatDuration = entry.sample.autoCombat
+          ? Math.max(entry.sample.firingIntervalMs, effect === "firing" ? FIRING_REPEAT_MS : animationDuration)
+          : effect === "firing" ? FIRING_REPEAT_MS : animationDuration;
+        const phase = entry.sample.autoCombat
+          ? entry.sample.combatPhase * repeatDuration
+          : repeatWhileMoving ? Math.max(0, entry.effectElapsed) % repeatDuration : Math.max(0, entry.effectElapsed);
         // Select the nearest world copy, including when a route crosses ±180°.
         const source = { ...sourceBox };
         const destination = { ...targetBox, ...nearestWorldPoint(targetBox, viewport, source) };
@@ -222,6 +236,28 @@ export function createEffectOverlay(api, onProjectionReady) {
         if (!impactVisible && !pathIntersectsViewport(source, destination, viewport, 34 * scale)) continue;
         const x = destination.x - source.x;
         const y = destination.y - source.y;
+        if (overview) {
+          const key = target ? [entry.id, target.id].sort().join(":") : entry.id;
+          if (!activeAreas.has(key)) {
+            activeAreas.add(key);
+            let area = this.battleAreas.get(key);
+            if (!area) {
+              area = svgElement("g");
+              area.append(createImpactSprite("booming", true));
+              for (const [cx, cy] of [[-22, -12], [18, 8], [0, -22]]) {
+                const blast = createImpactSprite("booming");
+                blast.setAttribute("transform", `translate(${cx} ${cy}) scale(0.42)`);
+                area.append(blast);
+              }
+              this.battleAreas.set(key, area);
+              this.svg.append(area);
+            }
+            const pulse = 0.78 + 0.16 * Math.sin(entry.effectElapsed * Math.PI * 2 / 900);
+            const center = targetLocation ? destination : { x: (source.x + destination.x) / 2, y: (source.y + destination.y) / 2 };
+            area.setAttribute("transform", `translate(${center.x} ${center.y}) scale(${pulse})`);
+            area.setAttribute("opacity", 0.65 + 0.25 * Math.sin(entry.effectElapsed * Math.PI * 2 / 600) ** 2);
+          }
+        }
         const markersOverlap = Math.abs(x) <= (source.width + destination.width) / 2 && Math.abs(y) <= (source.height + destination.height) / 2;
         if (markersOverlap && !hasImpact) continue;
         const distance = Math.hypot(x, y);
@@ -244,6 +280,13 @@ export function createEffectOverlay(api, onProjectionReady) {
           this.bursts.set(entry.id, burst);
           this.svg.append(burst.group);
           if (burst.impact) this.svg.append(burst.impact);
+        }
+        if (effect === "sword") {
+          const progress = phase / travelDuration;
+          const visible = phase < travelDuration;
+          burst.group.setAttribute("opacity", visible ? Math.sin(Math.PI * progress) : 0);
+          burst.group.setAttribute("transform", `translate(${destination.x} ${destination.y}) rotate(${-65 + progress * 140}) scale(${scale})`);
+          continue;
         }
         if (effect !== "firing") {
           const duration = travelDuration;
@@ -285,7 +328,7 @@ export function createEffectOverlay(api, onProjectionReady) {
             shape.setAttribute("rx", thickness / 2);
           }
         });
-        const impactElapsed = repeatWhileMoving
+        const impactElapsed = repeatWhileMoving && !entry.sample.autoCombat
           ? entry.effectElapsed < travelDuration ? -1 : (entry.effectElapsed - travelDuration) % IMPACT_DURATION_MS
           : phase - travelDuration;
         animateImpact(burst.impact, impactElapsed, Math.max(entry.displayScale, target?.displayScale ?? entry.displayScale), destination);
@@ -295,6 +338,11 @@ export function createEffectOverlay(api, onProjectionReady) {
         burst.group.remove();
         burst.impact?.remove();
         this.bursts.delete(id);
+      }
+      for (const [id, area] of this.battleAreas) {
+        if (activeAreas.has(id)) continue;
+        area.remove();
+        this.battleAreas.delete(id);
       }
     }
 
@@ -306,6 +354,7 @@ export function createEffectOverlay(api, onProjectionReady) {
       this.svg.remove();
       this.svg.replaceChildren();
       this.bursts.clear();
+      this.battleAreas.clear();
       this.entries = new Map();
     }
   }

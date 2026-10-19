@@ -1,9 +1,11 @@
+export const BADGE_FORMATIONS = { S: { label: "Squad", troops: 10 }, M: { label: "Battalion", troops: 600 }, L: { label: "Brigade", troops: 3000 }, XL: { label: "Division", troops: 12000 } };
 export const BADGE_SIZES = { S: 0.5, M: 1, L: 1.25, XL: 1.5 };
 export const ROUTE_EFFECTS = ["none", "firing", "booming", "demolish", "kills", "crack", "surrender"];
 export const TARGET_EFFECTS = ROUTE_EFFECTS.filter((effect) => effect !== "none" && effect !== "surrender");
 export const MAX_STOPS = 200;
 export const MAX_LINES = 200;
 export const MAX_LINE_POINTS = 2000;
+export const DEFAULT_SCENARIO_DATE = "1941-12-08T00:00";
 
 // A scenario clock uses UTC arithmetic without interpreting the user's local timezone.
 export function scenarioTime(value) {

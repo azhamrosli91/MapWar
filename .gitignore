@@ -2,6 +2,7 @@
 node_modules/
 dist/
 .vite/
+data/
 
 # Local configuration and credentials
 .env*
