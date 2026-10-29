@@ -903,6 +903,26 @@ export default function App() {
     setMessage({ text: "New map created." });
   }
 
+  async function loadPublishedPreview(publication) {
+    const incoming = await validateProject(publication.project);
+    if (!window.confirm(`Load “${publication.title}” to edit? This replaces your current map and any unsaved edits. Export first if you need a backup.`)) return;
+    resetEditor();
+    playback.edit();
+    setSelectedId(null);
+    setSection("badges");
+    battle.edit();
+    setProject(incoming);
+    setActiveGroupId(incoming.groups[0].id);
+    updateMapFileName(publication.title);
+    setInitialView(incoming.view);
+    editingView.current = null;
+    mapRef.current?.restore(incoming.view);
+    setPanelOpen(true);
+    setTimelineMinimized(true);
+    setPreviewLibraryOpen(false);
+    setMessage({ text: `Loaded “${publication.title}” for editing. Publish again to share your changes.` });
+  }
+
   async function importMap(event) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -1295,7 +1315,7 @@ export default function App() {
 
   return (
       <div className={`app${mapFullscreen ? " map-fullscreen" : ""}`}>
-      {previewLibraryOpen && <PreviewLibrary project={project} getMapView={() => mapRef.current?.getView()} mapFileName={mapFileName} hasDraft={!!(draft || unitDraft || lineDraft || mapEdit || dirty || battle.mode === "command")} onClose={() => setPreviewLibraryOpen(false)} />}
+      {previewLibraryOpen && <PreviewLibrary project={project} getMapView={() => mapRef.current?.getView()} mapFileName={mapFileName} hasDraft={!!(draft || unitDraft || lineDraft || mapEdit || dirty || battle.mode === "command")} onLoad={loadPublishedPreview} onClose={() => setPreviewLibraryOpen(false)} />}
       <dialog ref={deleteBadgeDialogRef} className="group-name-dialog delete-badge-dialog" aria-labelledby="delete-badge-title" aria-describedby="delete-badge-description" onClick={(event) => { if (event.target === event.currentTarget) event.currentTarget.close(); }}>
         <h3 id="delete-badge-title">Delete badge</h3>
         <p id="delete-badge-description">Are you sure you want to delete {draft?.label || "this badge"}?</p>

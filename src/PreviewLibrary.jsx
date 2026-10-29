@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink, LoaderCircle, Trash2, X } from "lucide-react";
+import { ExternalLink, LoaderCircle, Pencil, Trash2, X } from "lucide-react";
 import { previewRequest, previewUrl } from "./preview-client.js";
 import { coordinates } from "./project-validation.js";
 import SharePreviewButton from "./SharePreviewButton.jsx";
 
-export default function PreviewLibrary({ project, getMapView, mapFileName, hasDraft, onClose }) {
+export default function PreviewLibrary({ project, getMapView, mapFileName, hasDraft, onLoad, onClose }) {
   const dialogRef = useRef(null);
   const [library, setLibrary] = useState(null);
   const [adminKey, setAdminKey] = useState("");
@@ -31,6 +31,15 @@ export default function PreviewLibrary({ project, getMapView, mapFileName, hasDr
   }, [reload]);
 
   const authorization = { Authorization: `Bearer ${adminKey.trim()}` };
+  async function load(publication) {
+    if (busy) return;
+    setBusy(true); setError(""); setNotice("");
+    try {
+      const saved = await previewRequest(`/${encodeURIComponent(publication.id)}`);
+      await onLoad(saved);
+    } catch (error) { setError(error.message); }
+    finally { setBusy(false); }
+  }
   async function publish(event) {
     event.preventDefault();
     if (busy || hasDraft || !library?.publishingEnabled || !validStart) return;
@@ -88,6 +97,7 @@ export default function PreviewLibrary({ project, getMapView, mapFileName, hasDr
         {library.previews.map((publication) => <article className="preview-publication" key={publication.id}>
           <div><strong>{publication.title}</strong><time dateTime={publication.createdAt}>{new Date(publication.createdAt).toLocaleString()}</time></div>
           <div className="preview-publication-actions">
+            <button className="secondary" type="button" disabled={busy} onClick={() => load(publication)}><Pencil size={15} />Load to edit</button>
             <a className="secondary" href={previewUrl(publication.id)} target="_blank" rel="noreferrer"><ExternalLink size={15} />Open preview</a>
             <SharePreviewButton id={publication.id} />
             {library.publishingEnabled && <button className="secondary preview-remove" type="button" disabled={busy || !adminKey.trim()} onClick={() => remove(publication)}><Trash2 size={15} />Remove</button>}
