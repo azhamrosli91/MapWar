@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { clearInvalidFiringTargets } from "./data.js";
+import { MAX_GROUPS } from "./combat.js";
 
 const colors = ["#3478d4", "#cf4d4d", "#54a35a", "#e2b537", "#8b62b5", "#158f90"];
 export default function GroupTabs({ project, activeId, onSelect, onChange, locked }) {
@@ -25,7 +26,7 @@ export default function GroupTabs({ project, activeId, onSelect, onChange, locke
     if (nameDialog.id) {
       onChange({ ...project, groups: project.groups.map((item) => item.id === nameDialog.id ? { ...item, name: name.trim() } : item) });
     } else {
-      if (project.groups.length >= 100) return;
+      if (project.groups.length >= MAX_GROUPS) return;
       const added = { id: crypto.randomUUID(), name: name.trim(), color: colors[project.groups.length % colors.length] };
       onChange({ ...project, groups: [...project.groups, added] });
       onSelect(added.id);
@@ -52,7 +53,7 @@ export default function GroupTabs({ project, activeId, onSelect, onChange, locke
   return <div className="group-controls">
     <div className="group-tab-bar">
       <div className="group-tabs" role="tablist" aria-label="Groups">{project.groups.map((item) => <button type="button" role="tab" aria-selected={item.id === group.id} className={item.id === group.id ? "active" : ""} style={{ "--group-color": item.color }} key={item.id} title={`${item.name} · Right-click to rename`} onContextMenu={(event) => { event.preventDefault(); openNameDialog(item); }} onKeyDown={(event) => { if (event.key === "F2") { event.preventDefault(); openNameDialog(item); } }} onClick={() => { onSelect(item.id); setDeleting(false); }}><i /><span className="group-tab-name">{item.name}</span><span className="group-tab-count" aria-label={`${project.badges.filter((badge) => badge.groupId === item.id).length} badges`}>{project.badges.filter((badge) => badge.groupId === item.id).length}</span></button>)}</div>
-      <button className="group-add-tab" type="button" aria-label="Add group" title="Add group" disabled={locked || project.groups.length >= 100} onClick={() => openNameDialog()}>+</button>
+      <button className="group-add-tab" type="button" aria-label="Add group" title="Add group" disabled={locked || project.groups.length >= MAX_GROUPS} onClick={() => openNameDialog()}>+</button>
     </div>
     <dialog className="group-name-dialog" ref={dialogRef} onCancel={() => setNameDialog(null)} onClose={() => setNameDialog(null)} aria-labelledby="group-name-title">
       <form onSubmit={saveName}>

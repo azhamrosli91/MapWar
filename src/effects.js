@@ -121,6 +121,7 @@ export function createEffectOverlay(api, onProjectionReady) {
       this.entries = new Map();
       this.bursts = new Map();
       this.battleAreas = new Map();
+      this.locationLeaders = new Map();
       this.frame = null;
       this.svg = svgElement("svg", { class: "firing-overlay", width: 1, height: 1, "aria-hidden": "true" });
       this.shade = svgElement("rect", { fill: "#071322", opacity: 0, "pointer-events": "none" });
@@ -181,6 +182,7 @@ export function createEffectOverlay(api, onProjectionReady) {
       }
       const active = new Set();
       const activeAreas = new Set();
+      const activeLeaders = new Set();
       const overview = (api.map.getZoom() ?? Infinity) <= 10.7;
       const boxes = new Map();
       const boxFor = (entry) => {
@@ -203,16 +205,44 @@ export function createEffectOverlay(api, onProjectionReady) {
       const previewPoint = this.targetPreviewPosition ? nearestWorldPoint(projection.fromLatLngToDivPixel(this.targetPreviewPosition), viewport) : null;
       this.targetPreview.setAttribute("opacity", previewPoint ? 0.5 : 0);
       if (previewPoint) this.targetPreview.setAttribute("transform", `translate(${previewPoint.x} ${previewPoint.y})`);
+      // Badge spacing is visual only: show the actual map anchor whenever shifted.
+      for (const entry of this.entries.values()) {
+        if (!entry.rendered || !entry.battleOffset) continue;
+        const anchor = nearestWorldPoint(projection.fromLatLngToDivPixel(entry.currentPosition), viewport);
+        if (!anchor) continue;
+        let leader = this.locationLeaders.get(entry.id);
+        if (!leader) {
+          const group = svgElement("g", { opacity: 0.8 });
+          const line = svgElement("line", { stroke: "#26384a", "stroke-width": 1.5 });
+          const dot = svgElement("circle", { r: 3, fill: "#26384a", stroke: "#ffffff", "stroke-width": 1.5 });
+          group.append(line, dot);
+          this.svg.append(group);
+          leader = { group, line, dot };
+          this.locationLeaders.set(entry.id, leader);
+        }
+        leader.line.setAttribute("x1", anchor.x);
+        leader.line.setAttribute("y1", anchor.y);
+        leader.line.setAttribute("x2", anchor.x + entry.battleOffset);
+        leader.line.setAttribute("y2", anchor.y);
+        leader.dot.setAttribute("cx", anchor.x);
+        leader.dot.setAttribute("cy", anchor.y);
+        activeLeaders.add(entry.id);
+      }
+      for (const [id, leader] of this.locationLeaders) {
+        if (activeLeaders.has(id)) continue;
+        leader.group.remove();
+        this.locationLeaders.delete(id);
+      }
       for (const entry of this.entries.values()) {
         const effect = entry.sample?.effect;
         if (!effect || effect === "none" || effect === "surrender" || !entry.visible) continue;
         if (!Number.isFinite(entry.effectElapsed)) continue;
-        const repeatWhileMoving = entry.sample.autoCombat || entry.isMoving && (effect === "firing" || effect === "booming");
+        const repeatCombat = entry.sample.autoCombat || effect === "firing" || effect === "booming";
         const travelDuration = effect === "firing" ? SHOT_OFFSETS.at(-1) + SHOT_MS : EFFECT_CYCLES[effect] * 0.56;
         const hasImpact = EFFECTS_WITH_IMPACTS.includes(effect);
         const impactDuration = hasImpact ? IMPACT_DURATION_MS : 0;
         const animationDuration = travelDuration + impactDuration;
-        if (!repeatWhileMoving && entry.effectElapsed >= animationDuration) continue;
+        if (!repeatCombat && entry.effectElapsed >= animationDuration) continue;
         const targetLocation = effect === "booming" ? entry.sample.targetLocation : null;
         const target = targetLocation ? null : this.entries.get(entry.sample.firingTargetId);
         if (!targetLocation && (!target || target === entry)) continue;
@@ -221,11 +251,11 @@ export function createEffectOverlay(api, onProjectionReady) {
         const targetBox = targetLocation && targetPoint ? { x: targetPoint.x, y: targetPoint.y, width: 0, height: 0 } : boxFor(target);
         if (!sourceBox || !targetBox) continue;
         const repeatDuration = entry.sample.autoCombat
-          ? Math.max(entry.sample.firingIntervalMs, effect === "firing" ? FIRING_REPEAT_MS : animationDuration)
+          ? Math.max(entry.sample.firingIntervalMs, animationDuration)
           : effect === "firing" ? FIRING_REPEAT_MS : animationDuration;
         const phase = entry.sample.autoCombat
-          ? entry.sample.combatPhase * repeatDuration
-          : repeatWhileMoving ? Math.max(0, entry.effectElapsed) % repeatDuration : Math.max(0, entry.effectElapsed);
+          ? Math.max(0, entry.effectElapsed) % repeatDuration
+          : repeatCombat ? Math.max(0, entry.effectElapsed) % repeatDuration : Math.max(0, entry.effectElapsed);
         // Select the nearest world copy, including when a route crosses ±180°.
         const source = { ...sourceBox };
         const destination = { ...targetBox, ...nearestWorldPoint(targetBox, viewport, source) };
@@ -328,7 +358,7 @@ export function createEffectOverlay(api, onProjectionReady) {
             shape.setAttribute("rx", thickness / 2);
           }
         });
-        const impactElapsed = repeatWhileMoving && !entry.sample.autoCombat
+        const impactElapsed = repeatCombat && !entry.sample.autoCombat
           ? entry.effectElapsed < travelDuration ? -1 : (entry.effectElapsed - travelDuration) % IMPACT_DURATION_MS
           : phase - travelDuration;
         animateImpact(burst.impact, impactElapsed, Math.max(entry.displayScale, target?.displayScale ?? entry.displayScale), destination);
@@ -355,6 +385,7 @@ export function createEffectOverlay(api, onProjectionReady) {
       this.svg.replaceChildren();
       this.bursts.clear();
       this.battleAreas.clear();
+      this.locationLeaders.clear();
       this.entries = new Map();
     }
   }

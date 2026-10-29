@@ -4,7 +4,7 @@ import { badgeElement, setBadgeTroopCount, setFeatureEffect, unitElement } from 
 import { coordinates } from "./data.js";
 import { createEffectOverlay } from "./effects.js";
 import { createCommandOverlay } from "./command-overlay.js";
-import { sampleBattle, remainingPath, normalizeCombat, nearestEnemy } from "./combat.js";
+import { sampleBattle, remainingPath, normalizeCombat, nearestEnemy, distance } from "./combat.js";
 import { createPaintOverlay } from "./paint-overlay.js";
 import { boxIntersectsViewport, declutterLabels, declutterMarkers, mapViewport, measureMarker, projectedMarkerBox } from "./viewport.js";
 import { HAS_MAP_KEY, MAPS_KEY } from "./maps-config.js";
@@ -214,6 +214,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         const unnumbered = entry.featureType === "badge" && entry.troopCount === 0
           && !entry.route.some((stop) => stop.troopCount > 0);
         return { id: entry.id, groupId: entry.groupId, combat: entry.combat, visibility: entry.visibility,
+          surrendered: entry.sample?.effect === "surrender", autoTargetable: entry.combat.targets.length > 0,
           count: unnumbered ? 1 : count,
           lat: typeof position.lat === "function" ? position.lat() : Number(position.lat),
           lng: typeof position.lng === "function" ? position.lng() : Number(position.lng), entry };
@@ -222,8 +223,20 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
       const origin = range?.start ?? time;
       const timeScale = range && range.end > range.start && live.current.animationDuration
         ? live.current.animationDuration * 1000 / (range.end - range.start) : 1;
+      const visibleForces = new Map(forces.map((force) => [force.id, force]));
       for (const source of forces) {
         const entry = source.entry;
+        const scheduled = entry.sample;
+        const scheduledTarget = markers.current.get(scheduled?.firingTargetId);
+        // A retreating target can leave range between dated stops. Do not keep
+        // drawing a ground shot to its old engagement once it has moved away.
+        if (["firing", "booming"].includes(scheduled?.effect) && !scheduled.targetLocation
+          && source.combat.domain === "land" && scheduledTarget?.combat.domain === "land") {
+          const target = visibleForces.get(scheduledTarget.id);
+          if (!target || target.surrendered || distance(source, target) > source.combat.range * 1000) {
+            entry.sample = { ...scheduled, effect: "none", firingTargetId: undefined };
+          }
+        }
         // Explicit route effects retain their selected targets and timing.
         if (entry.sample?.effect && entry.sample.effect !== "none") continue;
         const target = nearestEnemy(source, forces, time);
@@ -233,7 +246,6 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         const interval = source.combat.interval * 1000;
         entry.sample = { ...entry.sample, effect: source.combat.type, firingTargetId: target.id,
           effectStart: origin, autoCombat: true,
-          combatPhase: Math.max(0, time - origin) % interval / interval,
           firingIntervalMs: interval * timeScale };
         entry.effectElapsed = Math.max(0, time - origin) * timeScale;
       }
@@ -245,7 +257,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         const target = markers.current.get(entry.sample.firingTargetId);
         const travel = effect === "firing" ? 635 : ({ booming: 1350, demolish: 1500, kills: 1250, crack: 800, sword: 900, archer: 1100 }[effect] ?? 0) * 0.56;
         const duration = travel + (["firing", "booming", "demolish"].includes(effect) ? 3000 : 0);
-        if (!entry.sample.autoCombat && !(entry.isMoving && ["firing", "booming"].includes(effect)) && entry.effectElapsed >= duration) continue;
+        if (!entry.sample.autoCombat && !["firing", "booming"].includes(effect) && entry.effectElapsed >= duration) continue;
         entry.collisionProtected = true;
         if (target?.visible && target !== entry) target.collisionProtected = true;
       }
@@ -761,7 +773,11 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
       }
     },
     focus(point) {
-      const position = coordinates(point.lat, point.lng);
+      // Route navigation uses the displayed frame when playback is active.
+      const entry = markers.current.get(point.id);
+      const current = previewTime.current != null && entry?.visible ? entry.currentPosition : point;
+      const position = coordinates(typeof current.lat === "function" ? current.lat() : current.lat,
+        typeof current.lng === "function" ? current.lng() : current.lng);
       if (position) api?.map.panTo(position);
     },
     restore(view) { api?.map.setOptions({ ...view, heading: view.heading ?? 0, tilt: 0 }); },

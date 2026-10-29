@@ -168,7 +168,10 @@ export function declutterMarkers(entries, projection, viewport, zoom = 0) {
         return { x: candidate.x, overflow: Math.max(0, viewport.left - shiftedBox.left) + Math.max(0, shiftedBox.right - viewport.right) };
       });
       placements.sort((a, b) => a.overflow - b.overflow || Math.abs(a.x - originalX) - Math.abs(b.x - originalX));
-      candidate.x = placements[0].x;
+      // Separate badge artwork by a few pixels, never by an unbounded map distance.
+      // At overview scale keep the geographic anchor unchanged.
+      const maxOffset = zoom <= 10.7 ? 0 : zoom <= 14 ? 24 : 64;
+      candidate.x = originalX + Math.max(-maxOffset, Math.min(maxOffset, placements[0].x - originalX));
       candidate.entry.battleOffset = (candidate.entry.battleOffset ?? 0) + candidate.x - originalX;
       box = bounds(candidate);
     }

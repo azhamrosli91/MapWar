@@ -8,7 +8,7 @@ export async function previewRequest(path = "", options = {}) {
 }
 
 export function previewUrl(id) {
-  const url = new URL("/preview", window.location.origin);
+  const url = new URL("/", window.location.origin);
   url.searchParams.set("id", id);
   return url.href;
 }

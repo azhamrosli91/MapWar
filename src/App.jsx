@@ -552,7 +552,7 @@ export default function App() {
     if (project.badges.length >= MAX_BADGES) {
       setMessage({
         error: true,
-        text: "This map has reached 500 badges. Remove a badge before adding another.",
+        text: `This map has reached ${MAX_BADGES} badges. Remove a badge before adding another.`,
       });
       return;
     }
@@ -1295,7 +1295,7 @@ export default function App() {
 
   return (
       <div className={`app${mapFullscreen ? " map-fullscreen" : ""}`}>
-      {previewLibraryOpen && <PreviewLibrary project={project} mapFileName={mapFileName} hasDraft={!!(draft || unitDraft || lineDraft || mapEdit || dirty || battle.mode === "command")} onClose={() => setPreviewLibraryOpen(false)} />}
+      {previewLibraryOpen && <PreviewLibrary project={project} getMapView={() => mapRef.current?.getView()} mapFileName={mapFileName} hasDraft={!!(draft || unitDraft || lineDraft || mapEdit || dirty || battle.mode === "command")} onClose={() => setPreviewLibraryOpen(false)} />}
       <dialog ref={deleteBadgeDialogRef} className="group-name-dialog delete-badge-dialog" aria-labelledby="delete-badge-title" aria-describedby="delete-badge-description" onClick={(event) => { if (event.target === event.currentTarget) event.currentTarget.close(); }}>
         <h3 id="delete-badge-title">Delete badge</h3>
         <p id="delete-badge-description">Are you sure you want to delete {draft?.label || "this badge"}?</p>

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink, LoaderCircle, Trash2, X } from "lucide-react";
 import { previewRequest, previewUrl } from "./preview-client.js";
+import { coordinates } from "./project-validation.js";
 import SharePreviewButton from "./SharePreviewButton.jsx";
 
-export default function PreviewLibrary({ project, mapFileName, hasDraft, onClose }) {
+export default function PreviewLibrary({ project, getMapView, mapFileName, hasDraft, onClose }) {
   const dialogRef = useRef(null);
   const [library, setLibrary] = useState(null);
   const [adminKey, setAdminKey] = useState("");
@@ -12,6 +13,10 @@ export default function PreviewLibrary({ project, mapFileName, hasDraft, onClose
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [reload, setReload] = useState(0);
+  const [startView, setStartView] = useState(() => getMapView?.() ?? project.view);
+  const startCenter = coordinates(startView.center.lat, startView.center.lng);
+  const startZoom = startView.zoom === "" ? NaN : Number(startView.zoom);
+  const validStart = !!startCenter && Number.isFinite(startZoom) && startZoom >= 0 && startZoom <= 22;
   useEffect(() => {
     const dialog = dialogRef.current;
     dialog.showModal();
@@ -28,12 +33,12 @@ export default function PreviewLibrary({ project, mapFileName, hasDraft, onClose
   const authorization = { Authorization: `Bearer ${adminKey.trim()}` };
   async function publish(event) {
     event.preventDefault();
-    if (busy || hasDraft || !library?.publishingEnabled) return;
+    if (busy || hasDraft || !library?.publishingEnabled || !validStart) return;
     setBusy(true); setError(""); setNotice("");
     try {
       const publication = await previewRequest("", {
         method: "POST", headers: { ...authorization, "Content-Type": "application/json" },
-        body: JSON.stringify({ title, project }),
+        body: JSON.stringify({ title, project: { ...project, view: { ...startView, center: startCenter, zoom: startZoom } } }),
       });
       setLibrary((current) => ({ ...current, previews: [publication, ...current.previews] }));
       setNotice("Published a fixed copy. Open its preview or copy its link below.");
@@ -65,8 +70,17 @@ export default function PreviewLibrary({ project, mapFileName, hasDraft, onClose
       {library?.publishingEnabled && <form className="preview-publish" onSubmit={publish}>
         <label className="field-label">Admin publishing key<input type="password" autoComplete="off" value={adminKey} disabled={busy} onChange={(event) => setAdminKey(event.target.value)} placeholder="Enter your publishing key" /></label>
         <label className="field-label">Preview title<input value={title} maxLength={80} required disabled={busy} onChange={(event) => setTitle(event.target.value)} /></label>
+        <fieldset disabled={busy}>
+          <legend>Preview starting location</legend>
+          <p className="field-hint">Pan and zoom the editor map before opening this window, or enter the starting coordinates below.</p>
+          <label className="field-label">Latitude<input type="number" min="-90" max="90" step="any" required value={startView.center.lat} onChange={(event) => setStartView((view) => ({ ...view, center: { ...view.center, lat: event.target.value } }))} /></label>
+          <label className="field-label">Longitude<input type="number" min="-180" max="180" step="any" required value={startView.center.lng} onChange={(event) => setStartView((view) => ({ ...view, center: { ...view.center, lng: event.target.value } }))} /></label>
+          <label className="field-label">Starting zoom<input type="number" min="0" max="22" step="any" required value={startView.zoom} onChange={(event) => setStartView((view) => ({ ...view, zoom: event.target.value }))} /></label>
+          <button type="button" className="secondary" onClick={() => setStartView(getMapView?.() ?? project.view)}>Use current map view</button>
+          {!validStart && <p className="form-error" role="alert">Enter valid coordinates and a zoom between 0 and 22.</p>}
+        </fieldset>
         {hasDraft && <p className="field-hint">Save or cancel the active edits in the editor before publishing.</p>}
-        <button className="primary" type="submit" disabled={busy || hasDraft || !adminKey.trim() || !title.trim()}>{busy ? "Please wait…" : "Publish current map"}</button>
+        <button className="primary" type="submit" disabled={busy || hasDraft || !validStart || !adminKey.trim() || !title.trim()}>{busy ? "Please wait…" : "Publish current map"}</button>
       </form>}
       {library && <section aria-label="Published previews" className="preview-publications">
         <h3>Published previews</h3>

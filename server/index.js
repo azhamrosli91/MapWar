@@ -11,7 +11,7 @@ import { chromium } from "playwright";
 import ffmpegPath from "ffmpeg-static";
 import { routeError, timelineRange, visibilityError } from "../src/timeline.js";
 import { validatePaintStrokes } from "../src/paint.js";
-import { validateOwnership, validateBattles, replayRange } from "../src/combat.js";
+import { validateOwnership, validateBattles, replayRange, MAX_BADGES } from "../src/combat.js";
 import { UNIT_KINDS } from "../src/symbols.js";
 import { MAX_RECORDING_FRAMES, VIDEO_FPS, VIDEO_REQUEST_LIMIT } from "../src/video.js";
 import { previewApi } from "./previews.js";
@@ -77,7 +77,7 @@ function validVideoView(view) {
 
 function validate(input) {
   const project = input?.project;
-  if (!project || ![6, 7].includes(project.version) || !Array.isArray(project.badges) || project.badges.length > 500 || !Array.isArray(project.units) || project.units.length > 500 || !Array.isArray(project.lines) || project.lines.length > 200) throw new Error("Choose a valid Malaya World War II map with at most 500 badges, 500 symbols, and 200 lines.");
+  if (!project || ![6, 7].includes(project.version) || !Array.isArray(project.badges) || project.badges.length > MAX_BADGES || !Array.isArray(project.units) || project.units.length > 500 || !Array.isArray(project.lines) || project.lines.length > 200) throw new Error(`Choose a valid Malaya World War II map with at most ${MAX_BADGES} badges, 500 symbols, and 200 lines.`);
   validatePaintStrokes(project.paintStrokes);
   if (project.version === 7) { validateOwnership(project); validateBattles(project); }
   if (input.battleReplayId && !project.battles?.some((replay) => replay.id === input.battleReplayId)) throw new Error("The selected battle replay does not exist.");
@@ -113,7 +113,7 @@ function validate(input) {
 
 function validateImageInput(input) {
   const project = input?.project;
-  if (!project || ![6, 7].includes(project.version) || !Array.isArray(project.badges) || project.badges.length > 500 || !Array.isArray(project.units) || project.units.length > 500 || !Array.isArray(project.lines) || project.lines.length > 200) throw new Error("Choose a valid Malaya World War II map with at most 500 badges, 500 symbols, and 200 lines.");
+  if (!project || ![6, 7].includes(project.version) || !Array.isArray(project.badges) || project.badges.length > MAX_BADGES || !Array.isArray(project.units) || project.units.length > 500 || !Array.isArray(project.lines) || project.lines.length > 200) throw new Error(`Choose a valid Malaya World War II map with at most ${MAX_BADGES} badges, 500 symbols, and 200 lines.`);
   validatePaintStrokes(project.paintStrokes);
   if (project.version === 7) { validateOwnership(project); validateBattles(project); }
   if (input.battleReplayId && !project.battles?.some((replay) => replay.id === input.battleReplayId)) throw new Error("The selected battle replay does not exist.");

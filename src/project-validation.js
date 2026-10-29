@@ -2,6 +2,8 @@ import { BADGE_SYMBOLS, UNIT_KINDS } from "./symbols.js";
 import { BADGE_SIZES, MAX_LINES, MAX_LINE_POINTS, routeError, visibilityError } from "./timeline.js";
 import { validatePaintStrokes } from "./paint.js";
 import { DEFAULT_GROUP, normalizeGroups, normalizeCombat, validateOwnership, validateBattles, hydrateSnapshot } from "./combat.js";
+import { MAX_BADGES } from "./combat.js";
+export { MAX_BADGES } from "./combat.js";
 
 const DEFAULT_BADGE_SYMBOL = "helmet";
 const isBadgeSymbol = (value) => BADGE_SYMBOLS.some((symbol) => symbol.value === value);
@@ -13,7 +15,6 @@ export const DEFAULT_VIEW = {
   heading: 0,
 };
 export const EMPTY_PROJECT = { version: 7, view: DEFAULT_VIEW, groups: [DEFAULT_GROUP], badges: [], units: [], lines: [], paintStrokes: [], playbackDuration: 30, battles: [], battleAssets: {} };
-export const MAX_BADGES = 500;
 export const MAX_UNITS = 500;
 const MAX_PROJECT_BYTES = 24 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -56,7 +57,7 @@ export async function validateProject(input, normalizeImage = validateImageData)
     input.badges.length > MAX_BADGES
   ) {
     throw new Error(
-      "Choose a Malaya World War II version 1–7 file with at most 500 badges.",
+      `Choose a Malaya World War II version 1–7 file with at most ${MAX_BADGES} badges.`,
     );
   }
   const groups = normalizeGroups(input.version < 7 ? [DEFAULT_GROUP] : input.groups);

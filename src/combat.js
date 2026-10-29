@@ -29,8 +29,10 @@ export function normalizeCombat(value, feature) {
   if (!COMBAT_TYPES.includes(type)) throw new Error("Choose a valid combat type.");
   return { ...combat, type, targets: [...new Set(combat.targets)] };
 }
+export const MAX_GROUPS = 256;
+export const MAX_BADGES = 750;
 export function normalizeGroups(groups) {
-  if (!Array.isArray(groups) || !groups.length || groups.length > 100) throw new Error("Use between 1 and 100 groups.");
+  if (!Array.isArray(groups) || !groups.length || groups.length > MAX_GROUPS) throw new Error(`Use between 1 and ${MAX_GROUPS} groups.`);
   const ids = new Set();
   return groups.map((group) => {
     if (!group || typeof group.id !== "string" || !group.id || group.id.length > 100 || ids.has(group.id) || typeof group.name !== "string" || !group.name.trim() || group.name.trim().length > 80 || !/^#[0-9a-f]{6}$/i.test(group.color)) throw new Error("A group has an invalid name, color, or identifier.");
@@ -90,7 +92,7 @@ export function isVisible(force, at) {
   return (from == null || at >= from) && (until == null || at < until);
 }
 export function canAttack(source, target, at) {
-  return source.id !== target.id && source.count > 0 && target.count > 0 && !source.invalidTerrain && !target.invalidTerrain && source.groupId !== target.groupId && source.combat.damage > 0 && source.combat.range > 0 && source.combat.targets.includes(target.combat.domain) && isVisible(source, at) && isVisible(target, at);
+  return source.id !== target.id && source.count > 0 && target.count > 0 && !source.invalidTerrain && !target.invalidTerrain && !source.surrendered && !target.surrendered && target.autoTargetable !== false && source.groupId !== target.groupId && source.combat.damage > 0 && source.combat.range > 0 && source.combat.targets.includes(target.combat.domain) && isVisible(source, at) && isVisible(target, at);
 }
 // Shared range selection for route playback, including paused and exported frames.
 export function nearestEnemy(source, forces, at) {
@@ -214,7 +216,7 @@ export function validateBattles(project) {
     if (!replay || typeof replay.id !== "string" || !replay.id || replay.id.length > 100 || ids.has(replay.id) || typeof replay.name !== "string" || !replay.name.trim() || replay.name.length > 80 || !Number.isSafeInteger(replay.startAt) || !Number.isSafeInteger(replay.endAt) || replay.endAt < replay.startAt || Math.abs(replay.startAt) > 8640000000000000 || Math.abs(replay.endAt) > 8640000000000000 || !Array.isArray(replay.events) || replay.events.length > 200000 || !Array.isArray(replay.checkpoints) || replay.checkpoints.length > 4000) throw new Error("A battle replay is invalid or too large.");
     ids.add(replay.id);
     const snapshot = replay.snapshot;
-    if (!snapshot || !Array.isArray(snapshot.badges) || snapshot.badges.length > 500 || !Array.isArray(snapshot.units) || snapshot.units.length > 500 || !Array.isArray(snapshot.lines) || snapshot.lines.length > 200 || !Array.isArray(snapshot.paintStrokes)) throw new Error("A battle starting map is invalid.");
+    if (!snapshot || !Array.isArray(snapshot.badges) || snapshot.badges.length > MAX_BADGES || !Array.isArray(snapshot.units) || snapshot.units.length > 500 || !Array.isArray(snapshot.lines) || snapshot.lines.length > 200 || !Array.isArray(snapshot.paintStrokes)) throw new Error("A battle starting map is invalid.");
     validateOwnership(snapshot);
     const features = new Map();
     for (const force of [...snapshot.badges, ...snapshot.units]) {

@@ -148,7 +148,7 @@ export function sampleRoute(stops, time, interpolate) {
     effectStart: a.time,
     firingTargetId: a.firingTargetId,
     targetLocation: a.targetLocation,
-    moving: time > a.time && time < b.time,
+    moving: time > a.time && time < b.time && (a.lat !== b.lat || a.lng !== b.lng),
   };
 }
 
