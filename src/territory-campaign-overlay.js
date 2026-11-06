@@ -7,11 +7,11 @@ const mercatorY = (lat) => {
 };
 const originY = mercatorY(ANCHOR.lat);
 // All paths live in one immutable, camera-independent Mercator coordinate system.
-export const worldPoint = ({ lat, lng }) => ({ x: (lng - ANCHOR.lng) * 256 / 360, y: mercatorY(lat) - originY });
+const worldPoint = ({ lat, lng }) => ({ x: (lng - ANCHOR.lng) * 256 / 360, y: mercatorY(lat) - originY });
 const eastStep = 256 / 360;
 const northStep = mercatorY(ANCHOR.lat + 1) - originY;
 
-export function cameraTransform(api, projection) {
+function cameraTransform(api, projection) {
   const project = (lat, lng) => projection.fromLatLngToContainerPixel(new window.google.maps.LatLng(lat, lng));
   const origin = project(ANCHOR.lat, ANCHOR.lng);
   if (!origin) return null;

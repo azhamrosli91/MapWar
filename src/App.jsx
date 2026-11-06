@@ -260,7 +260,7 @@ export default function App() {
   const uploadSequence = useRef(0);
   const battle = useBattle(project, setProject, activeGroupId);
   const visibleProject = battle.snapshot ?? project;
-  const range = useMemo(() => battle.mode === "replay" ? replayRange(battle.replay) : timelineRange([...project.badges, ...project.units], project.groups, project.paintStrokes, project.territory), [battle.mode, battle.replay, project.badges, project.units, project.groups, project.paintStrokes, project.territory]);
+  const range = useMemo(() => battle.mode === "replay" ? replayRange(battle.replay) : timelineRange([...project.badges, ...project.units], project.groups, project.paintStrokes), [battle.mode, battle.replay, project.badges, project.units, project.groups, project.paintStrokes]);
   const groupItems = (key) => project[key].filter((item) => item.groupId === activeGroupId);
   const filteredCards = (key) => groupItems(key).filter((item) => (key === "badges" ? item.label : item.name).toLowerCase().includes(cardSearch[key].trim().toLowerCase()));
   function chooseGroup(id) {
@@ -1418,7 +1418,7 @@ export default function App() {
               { id: "paint", label: "Paint", icon: Paintbrush, description: "Drag on the map to color an area. Choose a brush size, shape, color, and transparency, or erase painted areas. Paint stays attached to the map as you zoom." },
               { id: "territory", label: "Territory", icon: Flag, description: "Configure automatic territory capture and frontlines from saved badge routes." },
             ].map(({ id, label, description, icon: Icon }) => <HelpTooltip key={id} label={label} description={description}><button className={section === id ? "active" : ""} aria-label={label} aria-description={description} aria-pressed={section === id} onClick={() => switchSection(id)}><Icon size={19} aria-hidden="true" /></button></HelpTooltip>)}</div>
-            {section === "territory" ? <TerritorySettings project={project} onChange={changeGroups} onFocus={(view) => mapRef.current?.restore(view)} /> : section === "paint" ? <div className="paint-controls">
+            {section === "territory" ? <TerritorySettings project={project} onChange={changeGroups} /> : section === "paint" ? <div className="paint-controls">
               <PaintVisibilityEditor key={activeGroupId} group={project.groups.find((group) => group.id === activeGroupId)} onSave={(paintVisibility) => setProject((current) => ({ ...current, groups: current.groups.map((group) => group.id === activeGroupId ? { ...group, paintVisibility } : group) }))} />
               
               <div className="paint-options" aria-label="Paint tool">{["paint", "erase"].map((tool) => <button key={tool} className={brush.tool === tool ? "active" : ""} onClick={() => setBrush((value) => ({ ...value, tool }))}>{tool === "paint" ? "Paint" : "Eraser"}</button>)}</div>

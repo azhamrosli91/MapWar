@@ -2244,10 +2244,6 @@ body { background: #edf2f4; }
 .territory-legend[hidden] { display: none; }
 .territory-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .territory-legend i { width: 11px; height: 11px; border-radius: 2px; }
-.world-territory-legend { flex-wrap: wrap; max-width: min(620px, calc(100% - 32px)); }
-.world-territory-legend small { flex-basis: 100%; font-size: 10px; }
-.world-theater-controls { display: flex; flex-wrap: wrap; gap: 6px; }
-.world-theater-controls button { flex: 1 1 110px; }
 .territory-settings { display: grid; gap: 12px; padding: 12px 0; }
 .territory-settings > label:not(.field-label) { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; }
 .territory-settings p, .territory-settings small { font-size: 12px; line-height: 1.5; color: var(--muted, #687488); }
