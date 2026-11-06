@@ -8,6 +8,8 @@ import { sampleBattle, remainingPath, normalizeCombat, nearestEnemy, distance } 
 import { createPaintOverlay } from "./paint-overlay.js";
 import { createTerritoryOverlay } from "./territory-overlay.js";
 import { createCampaignTerritoryOverlay } from "./territory-campaign-overlay.js";
+import { createWorldCampaignOverlay } from "./world-campaign-overlay.js";
+import { WORLD_CAMPAIGN_ID } from "./world-campaign.js";
 import { sphericalInterpolate } from "./geodesy.js";
 import { boxIntersectsViewport, declutterLabels, declutterMarkers, mapViewport, measureMarker, projectedMarkerBox } from "./viewport.js";
 import { HAS_MAP_KEY, MAPS_KEY } from "./maps-config.js";
@@ -326,10 +328,12 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
 
   useEffect(() => {
     if (!api) return;
-    const overlay = props.territory?.mode === "campaign" ? createCampaignTerritoryOverlay(api) : createTerritoryOverlay(api);
+    const overlay = props.territory?.mode === "campaign"
+      ? (props.territory.campaign?.id === WORLD_CAMPAIGN_ID ? createWorldCampaignOverlay(api) : createCampaignTerritoryOverlay(api))
+      : createTerritoryOverlay(api);
     territoryOverlay.current = overlay;
     return () => { territoryOverlay.current = null; overlay.dispose(); };
-  }, [api, props.territory?.mode]);
+  }, [api, props.territory?.mode, props.territory?.campaign?.id]);
 
   useEffect(() => {
     territoryOverlay.current?.configure(props.territory, badges, props.groups,

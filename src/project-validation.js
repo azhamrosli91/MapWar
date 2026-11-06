@@ -4,6 +4,7 @@ import { validatePaintStrokes } from "./paint.js";
 import { DEFAULT_GROUP, normalizeGroups, normalizeCombat, validateOwnership, validateBattles, hydrateSnapshot } from "./combat.js";
 import { MAX_BADGES } from "./combat.js";
 import { normalizeTerritory, TERRITORY_DEFAULTS, validateTerritoryGroups } from "./territory.js";
+import { WORLD_CAMPAIGN_ID, WORLD_GROUPS } from "./world-campaign.js";
 export { MAX_BADGES } from "./combat.js";
 
 const DEFAULT_BADGE_SYMBOL = "helmet";
@@ -15,7 +16,7 @@ export const DEFAULT_VIEW = {
   mapTypeId: "roadmap",
   heading: 0,
 };
-export const EMPTY_PROJECT = { version: 9, territory: { ...TERRITORY_DEFAULTS }, view: DEFAULT_VIEW, groups: [DEFAULT_GROUP], badges: [], units: [], lines: [], paintStrokes: [], playbackDuration: 30, battles: [], battleAssets: {} };
+export const EMPTY_PROJECT = { version: 9, territory: { ...TERRITORY_DEFAULTS, enabled: true, mode: "campaign", campaign: { id: WORLD_CAMPAIGN_ID, initialGroupId: WORLD_GROUPS[0].id, captureGroupId: WORLD_GROUPS[1].id, japanGroupId: WORLD_GROUPS[2].id, hideLegacyCapturePaint: true } }, view: DEFAULT_VIEW, groups: WORLD_GROUPS.map((group) => ({ ...group })), badges: [], units: [], lines: [], paintStrokes: [], playbackDuration: 30, battles: [], battleAssets: {} };
 export const MAX_UNITS = 500;
 const MAX_PROJECT_BYTES = 24 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;

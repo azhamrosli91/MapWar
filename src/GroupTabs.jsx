@@ -47,8 +47,10 @@ export default function GroupTabs({ project, activeId, onSelect, onChange, locke
     const updated = { ...project, groups: project.groups.filter((item) => item.id !== settingsGroup.id) };
     if (project.territory?.campaign) {
       const campaign = { ...project.territory.campaign };
-      for (const key of ["initialGroupId", "captureGroupId"]) if (campaign[key] === settingsGroup.id) campaign[key] = destination;
-      updated.territory = campaign.initialGroupId === "delete" || campaign.captureGroupId === "delete" || campaign.initialGroupId === campaign.captureGroupId
+      const keys = ["initialGroupId", "captureGroupId", ...(campaign.japanGroupId ? ["japanGroupId"] : [])];
+      for (const key of keys) if (campaign[key] === settingsGroup.id) campaign[key] = destination;
+      const ids = keys.map((key) => campaign[key]);
+      updated.territory = ids.includes("delete") || new Set(ids).size !== ids.length
         ? { ...project.territory, enabled: false, mode: "routes", campaign: null }
         : { ...project.territory, campaign };
     }

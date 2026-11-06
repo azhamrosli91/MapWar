@@ -98,7 +98,7 @@ function validate(input) {
   for (const line of project.lines) {
     if (!line || !Array.isArray(line.path) || line.path.length < (line.kind === "text" ? 1 : 2) || line.path.length > 2000 || line.path.some((position) => !point(position)) || !["solid", "dashed"].includes(line.style) || ![3, 6, 10].includes(line.width)) throw new Error("A drawn line is invalid.");
   }
-  const range = input.battleReplayId ? replayRange(project.battles.find((replay) => replay.id === input.battleReplayId)) : timelineRange([...project.badges, ...project.units], project.groups, project.paintStrokes);
+  const range = input.battleReplayId ? replayRange(project.battles.find((replay) => replay.id === input.battleReplayId)) : timelineRange([...project.badges, ...project.units], project.groups, project.paintStrokes, project.territory);
   if (input.recording == null && !range) throw new Error("Add a dated movement route or visibility date before exporting a fixed-view video.");
   const { orientation, logicalSize, view, duration, showDate } = input;
   const ratio = orientation === "portrait" ? [9, 16] : orientation === "landscape" ? [16, 9] : null;
@@ -200,7 +200,7 @@ async function render(job) {
   const input = job.input;
   const format = input.orientation === "portrait" ? { width: 1080, height: 1920 } : { width: 1920, height: 1080 };
   const scale = format.width / input.logicalSize.width;
-  const range = input.battleReplayId ? replayRange(input.project.battles.find((replay) => replay.id === input.battleReplayId)) : timelineRange([...input.project.badges, ...input.project.units], input.project.groups, input.project.paintStrokes);
+  const range = input.battleReplayId ? replayRange(input.project.battles.find((replay) => replay.id === input.battleReplayId)) : timelineRange([...input.project.badges, ...input.project.units], input.project.groups, input.project.paintStrokes, input.project.territory);
   const frames = input.recording?.frames.length ?? input.duration * VIDEO_FPS;
   const origin = renderOrigin;
   let browser;

@@ -1,4 +1,5 @@
 import { EARTH_RADIUS, sphericalInterpolate } from "./geodesy.js";
+import { WORLD_CAMPAIGN_ID } from "./world-campaign.js";
 
 export const TERRITORY_DEFAULTS = { enabled: false, mode: "routes", campaign: null, cellSizeMeters: 100, opacity: 0.3, showFrontline: true, showDebugGrid: false, origin: null };
 export const BADGE_TERRITORY_DEFAULTS = { captureEnabled: false, captureRadiusMeters: 100, allowNonLandCapture: false };
@@ -22,8 +23,9 @@ export function normalizeTerritory(value, badge = false) {
     if (!["routes", "campaign"].includes(output.mode)) throw new Error("Choose route corridors or historical land areas.");
     if (output.campaign !== null) {
       const c = output.campaign;
-      if (!c || c.id !== "malaya-1941-42-v1" || typeof c.initialGroupId !== "string" || !c.initialGroupId || typeof c.captureGroupId !== "string" || !c.captureGroupId || c.initialGroupId === c.captureGroupId || (c.hideLegacyCapturePaint !== undefined && typeof c.hideLegacyCapturePaint !== "boolean")) throw new Error("Choose different initial and capturing groups for the historical campaign.");
-      output.campaign = { id: c.id, initialGroupId: c.initialGroupId, captureGroupId: c.captureGroupId, hideLegacyCapturePaint: c.hideLegacyCapturePaint ?? false };
+      if (!c || !["malaya-1941-42-v1", WORLD_CAMPAIGN_ID].includes(c.id) || typeof c.initialGroupId !== "string" || !c.initialGroupId || typeof c.captureGroupId !== "string" || !c.captureGroupId || c.initialGroupId === c.captureGroupId || (c.hideLegacyCapturePaint !== undefined && typeof c.hideLegacyCapturePaint !== "boolean")) throw new Error("Choose different initial and capturing groups for the historical campaign.");
+      if (c.id === WORLD_CAMPAIGN_ID && (typeof c.japanGroupId !== "string" || !c.japanGroupId || [c.initialGroupId, c.captureGroupId].includes(c.japanGroupId))) throw new Error("Choose three different groups for the Allies, European Axis and Japan.");
+      output.campaign = { id: c.id, initialGroupId: c.initialGroupId, captureGroupId: c.captureGroupId, ...(c.id === WORLD_CAMPAIGN_ID ? { japanGroupId: c.japanGroupId } : {}), hideLegacyCapturePaint: c.hideLegacyCapturePaint ?? false };
     }
     if (output.mode === "campaign" && !output.campaign) throw new Error("Choose the historical campaign and its groups.");
     within("cellSizeMeters", 25, 5000); within("opacity", 0, 1);
@@ -36,7 +38,8 @@ export function normalizeTerritory(value, badge = false) {
 }
 export function validateTerritoryGroups(territory, groups) {
   if (territory?.mode !== "campaign") return;
-  for (const id of [territory.campaign.initialGroupId, territory.campaign.captureGroupId]) if (!groups.some((g) => g.id === id)) throw new Error("Historical territory refers to a missing group.");
+  const c = territory.campaign;
+  for (const id of [c.initialGroupId, c.captureGroupId, ...(c.id === WORLD_CAMPAIGN_ID ? [c.japanGroupId] : [])]) if (!groups.some((g) => g.id === id)) throw new Error("Historical territory refers to a missing group.");
 }
 export function territoryEligible(badge) {
   return !!badge.territory?.captureEnabled && (badge.combat?.domain === "land" || !badge.combat?.domain || badge.territory.allowNonLandCapture);

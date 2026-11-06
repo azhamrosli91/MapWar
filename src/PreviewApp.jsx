@@ -1,22 +1,25 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Compass, Crosshair, Flag, LoaderCircle, Maximize2, Menu, Minimize2, Minus, Pause, Play, Plus, RotateCcw, X } from "lucide-react";
 import MapCanvas from "./MapCanvas.jsx";
 import SharePreviewButton from "./SharePreviewButton.jsx";
 import Timeline from "./Timeline.jsx";
 import { hydrateSnapshot, replayRange } from "./combat.js";
-import { validateProject } from "./data.js";
+import { EMPTY_PROJECT, validateProject } from "./data.js";
+import { WORLD_CAMPAIGN_ID, WORLD_THEATERS } from "./world-campaign.js";
 import { HAS_MAP_KEY } from "./maps-config.js";
 import { previewRequest, previewUrl } from "./preview-client.js";
 import { scenarioTime, timelineRange } from "./timeline.js";
 import { territoryEligible } from "./territory.js";
 import usePlayback from "./usePlayback.js";
 
+const WORLD_PREVIEW = { id: WORLD_CAMPAIGN_ID, title: "World War II · 1939–1945", project: EMPTY_PROJECT };
+
 function PreviewMap({ publication, replay, mobile, headerTarget, drawerTarget, drawerOpen, onOpenOptions }) {
   const project = publication.project;
   const scene = useMemo(() => replay ? hydrateSnapshot(replay, project.battleAssets) : project, [project, replay]);
   const battleReplay = useMemo(() => replay ? { ...replay, snapshot: scene } : undefined, [replay, scene]);
-  const range = useMemo(() => replay ? replayRange(replay) : timelineRange([...project.badges, ...project.units], project.groups, project.paintStrokes), [project, replay]);
+  const range = useMemo(() => replay ? replayRange(replay) : timelineRange([...project.badges, ...project.units], project.groups, project.paintStrokes, project.territory), [project, replay]);
   const mapRef = useRef(null);
   const [mapStatus, setMapStatus] = useState(HAS_MAP_KEY ? "loading" : "missing");
   const [minimized, setMinimized] = useState(true);
@@ -31,6 +34,19 @@ function PreviewMap({ publication, replay, mobile, headerTarget, drawerTarget, d
   const initialTime = range && firstCapture >= range.start && firstCapture <= range.start + 60000 ? firstCapture : range?.start;
   const seek = playback.seek;
   useEffect(() => { if (initialTime != null) seek(initialTime); }, [initialTime, seek]);
+  const autoplayHandled = useRef(false);
+  const hasTimeline = !!range;
+  const playing = playback.playing;
+  const autoplay = useEffectEvent(() => playback.play());
+  useEffect(() => {
+    if (playing) autoplayHandled.current = true;
+    if (!ready || !hasTimeline || autoplayHandled.current) return;
+    const timer = window.setTimeout(() => {
+      autoplayHandled.current = true;
+      autoplay();
+    }, 2000);
+    return () => window.clearTimeout(timer);
+  }, [ready, hasTimeline, playing]);
   useEffect(() => {
     const escape = (event) => { if (event.key === "Escape" && !document.querySelector(".preview-options-drawer[open]")) setFullscreen(false); };
     window.addEventListener("keydown", escape);
@@ -48,7 +64,8 @@ function PreviewMap({ publication, replay, mobile, headerTarget, drawerTarget, d
     </>}
     <button type="button" disabled={!ready} onClick={() => mapRef.current?.setType("roadmap")}>Map</button>
     <button type="button" disabled={!ready} onClick={() => mapRef.current?.setType("satellite")}>Satellite</button>
-    <button type="button" disabled={!ready} onClick={() => mapRef.current?.fitAll()}><Crosshair size={16} />Fit all</button>
+    <button type="button" disabled={!ready} onClick={() => project.territory?.campaign?.id === WORLD_CAMPAIGN_ID ? mapRef.current?.restore(project.view) : mapRef.current?.fitAll()}><Crosshair size={16} />Fit all</button>
+    {project.territory?.campaign?.id === WORLD_CAMPAIGN_ID && <select aria-label="Historical theater" disabled={!ready} defaultValue="Whole world" onChange={(event) => { const { name: _name, ...view } = WORLD_THEATERS.find((item) => item.name === event.target.value); mapRef.current?.restore({ ...project.view, ...view }); }}>{WORLD_THEATERS.map((item) => <option key={item.name}>{item.name}</option>)}</select>}
     <button type="button" disabled={!ready} onClick={() => mapRef.current?.rotate(-15)} aria-label="Rotate map left">↶</button>
     <button type="button" disabled={!ready} onClick={() => mapRef.current?.resetHeading()} aria-label="Reset map north"><Compass size={17} /></button>
     <button type="button" disabled={!ready} onClick={() => mapRef.current?.rotate(15)} aria-label="Rotate map right">↷</button>
@@ -98,8 +115,8 @@ function PreviewScene({ publication, mobile, headerTarget, drawerTarget, drawerO
 }
 
 export default function PreviewApp() {
-  const [library, setLibrary] = useState(null);
-  const [selectedId, setSelectedId] = useState(() => new URLSearchParams(window.location.search).get("id") || "");
+  const [library, setLibrary] = useState([WORLD_PREVIEW]);
+  const [selectedId, setSelectedId] = useState(() => new URLSearchParams(window.location.search).get("id") || WORLD_CAMPAIGN_ID);
   const [publication, setPublication] = useState(null);
   const [libraryError, setLibraryError] = useState("");
   const [loadError, setLoadError] = useState("");
@@ -125,27 +142,21 @@ export default function PreviewApp() {
     setLibraryError("");
     previewRequest("", { signal: controller.signal }).then((data) => {
       if (controller.signal.aborted) return;
-      setLibrary(data.previews);
-      setSelectedId((current) => {
-        if (current || !data.previews.length) return current;
-        const id = data.previews[0].id;
-        window.history.replaceState(null, "", previewUrl(id));
-        return id;
-      });
+      setLibrary([WORLD_PREVIEW, ...data.previews.filter((item) => item.id !== WORLD_CAMPAIGN_ID)]);
     }).catch((error) => { if (!controller.signal.aborted) setLibraryError(error.message); });
     return () => controller.abort();
   }, [reload]);
   useEffect(() => {
     const changed = () => {
-      const id = new URLSearchParams(window.location.search).get("id") || "";
-      setSelectedId(id || library?.[0]?.id || "");
+      const id = new URLSearchParams(window.location.search).get("id") || WORLD_CAMPAIGN_ID;
+      setSelectedId(id);
     };
     window.addEventListener("popstate", changed);
     return () => window.removeEventListener("popstate", changed);
   }, [library]);
   useEffect(() => {
     setPublication(null); setLoadError("");
-    if (!selectedId) return;
+    if (!selectedId || selectedId === WORLD_CAMPAIGN_ID) return;
     const controller = new AbortController();
     previewRequest(`/${encodeURIComponent(selectedId)}`, { signal: controller.signal }).then(async (data) => {
       const project = await validateProject(data.project);
@@ -154,7 +165,7 @@ export default function PreviewApp() {
     return () => controller.abort();
   }, [selectedId, reload]);
 
-  const current = publication?.id === selectedId ? publication : null;
+  const current = selectedId === WORLD_CAMPAIGN_ID ? WORLD_PREVIEW : publication?.id === selectedId ? publication : null;
   function choose(id) {
     window.history.pushState(null, "", previewUrl(id));
     setSelectedId(id);

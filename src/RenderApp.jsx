@@ -22,7 +22,7 @@ export default function RenderApp() {
         if (input.battleReplayId && !storedBattle) throw new Error("The selected battle replay does not exist.");
         const scene = storedBattle ? hydrateSnapshot(storedBattle, project.battleAssets) : project;
         const battle = storedBattle ? { ...storedBattle, snapshot: scene } : null;
-        const range = battle ? replayRange(battle) : timelineRange([...project.badges, ...project.units], project.groups, project.paintStrokes);
+        const range = battle ? replayRange(battle) : timelineRange([...project.badges, ...project.units], project.groups, project.paintStrokes, project.territory);
         if (input.kind !== "image" && !input.recording && !range) throw new Error("This map has no dated route or visibility change.");
         const sources = [...scene.badges.flatMap((badge) => [badge.flag, badge.symbolImage]), ...scene.units.map((unit) => unit.image)].filter(Boolean);
         await Promise.all(sources.map(async (src) => { const image = new Image(); image.src = src; await image.decode(); }));
@@ -56,7 +56,7 @@ export default function RenderApp() {
     ready.current = false;
     statusRef.current = mapStatus === "ready" ? "loading" : mapStatus;
     if (mapStatus === "ready" && snapshot) {
-      const range = snapshot.battle ? replayRange(snapshot.battle) : timelineRange([...snapshot.project.badges, ...snapshot.project.units], snapshot.project.groups, snapshot.project.paintStrokes);
+      const range = snapshot.battle ? replayRange(snapshot.battle) : timelineRange([...snapshot.project.badges, ...snapshot.project.units], snapshot.project.groups, snapshot.project.paintStrokes, snapshot.project.territory);
       const time = snapshot.kind === "image" ? snapshot.previewTime : snapshot.recording ? snapshot.recording.initialFrame.previewTime : range?.start;
       mapRef.current.whenTerritoryReady(time).then(() => {
         if (!cancelled) { ready.current = true; statusRef.current = "ready"; }
@@ -68,7 +68,7 @@ export default function RenderApp() {
   }, [mapStatus, snapshot]);
 
   if (!snapshot) return null;
-  const range = snapshot.battle ? replayRange(snapshot.battle) : timelineRange([...snapshot.project.badges, ...snapshot.project.units], snapshot.project.groups, snapshot.project.paintStrokes);
+  const range = snapshot.battle ? replayRange(snapshot.battle) : timelineRange([...snapshot.project.badges, ...snapshot.project.units], snapshot.project.groups, snapshot.project.paintStrokes, snapshot.project.territory);
   const imageExport = snapshot.kind === "image";
   const previewTime = imageExport ? snapshot.previewTime : snapshot.recording ? snapshot.recording.initialFrame.previewTime : range.start;
   const preview = Number.isFinite(previewTime);

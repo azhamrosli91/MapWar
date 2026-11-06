@@ -1,3 +1,5 @@
+import { WORLD_CAMPAIGN_DATES, WORLD_CAMPAIGN_ID } from "./world-campaign.js";
+
 export const BADGE_FORMATIONS = { S: { label: "Squad", troops: 10 }, M: { label: "Battalion", troops: 600 }, L: { label: "Brigade", troops: 3000 }, XL: { label: "Division", troops: 12000 } };
 export const BADGE_SIZES = { S: 0.5, M: 1, L: 1.25, XL: 1.5 };
 export const ROUTE_EFFECTS = ["none", "firing", "booming", "demolish", "kills", "crack", "surrender"];
@@ -99,10 +101,14 @@ export function visibilityError(visibility) {
   return "";
 }
 
-export function timelineRange(badges, groups = [], paintStrokes = []) {
+export function timelineRange(badges, groups = [], paintStrokes = [], territory = null) {
   let start = Infinity;
   let end = -Infinity;
   let events = 0;
+  if (territory?.enabled && territory.mode === "campaign" && territory.campaign?.id === WORLD_CAMPAIGN_ID) {
+    [start, end] = WORLD_CAMPAIGN_DATES.map(scenarioTime);
+    events += 2;
+  }
   const paintedGroups = new Set(paintStrokes.map((stroke) => stroke.groupId));
   const paintEvents = groups.filter((group) => paintedGroups.has(group.id)).map((group) => ({ visibility: group.paintVisibility }));
   for (const badge of [...badges, ...paintEvents]) {
