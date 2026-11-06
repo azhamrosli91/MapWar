@@ -12,6 +12,7 @@ export default function RenderApp() {
   const dateRef = useRef(null);
   const ready = useRef(false);
   const statusRef = useRef("loading");
+  const errorRef = useRef(null);
 
   useEffect(() => {
     window.fieldmarkRender = {
@@ -26,14 +27,18 @@ export default function RenderApp() {
         const sources = [...scene.badges.flatMap((badge) => [badge.flag, badge.symbolImage]), ...scene.units.map((unit) => unit.image)].filter(Boolean);
         await Promise.all(sources.map(async (src) => { const image = new Image(); image.src = src; await image.decode(); }));
         ready.current = false;
+        statusRef.current = "loading";
+        errorRef.current = null;
         setSnapshot({ ...input, project, scene, battle });
         return true;
       },
       get ready() { return ready.current; },
       get status() { return statusRef.current; },
+      get error() { return errorRef.current; },
       async seek(time) {
         if (!ready.current || !mapRef.current) throw new Error("The map is not ready for a frame.");
         mapRef.current.previewAt(time);
+        await mapRef.current.whenTerritoryReady(time);
         if (dateRef.current) dateRef.current.textContent = videoDate(time);
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       },
@@ -46,7 +51,21 @@ export default function RenderApp() {
     return () => { delete window.fieldmarkRender; };
   }, []);
 
-  useEffect(() => { statusRef.current = mapStatus; ready.current = mapStatus === "ready" && !!snapshot; }, [mapStatus, snapshot]);
+  useEffect(() => {
+    let cancelled = false;
+    ready.current = false;
+    statusRef.current = mapStatus === "ready" ? "loading" : mapStatus;
+    if (mapStatus === "ready" && snapshot) {
+      const range = snapshot.battle ? replayRange(snapshot.battle) : timelineRange([...snapshot.project.badges, ...snapshot.project.units], snapshot.project.groups, snapshot.project.paintStrokes);
+      const time = snapshot.kind === "image" ? snapshot.previewTime : snapshot.recording ? snapshot.recording.initialFrame.previewTime : range?.start;
+      mapRef.current.whenTerritoryReady(time).then(() => {
+        if (!cancelled) { ready.current = true; statusRef.current = "ready"; }
+      }).catch((error) => {
+        if (!cancelled) { statusRef.current = "error"; errorRef.current = error.message; }
+      });
+    }
+    return () => { cancelled = true; };
+  }, [mapStatus, snapshot]);
 
   if (!snapshot) return null;
   const range = snapshot.battle ? replayRange(snapshot.battle) : timelineRange([...snapshot.project.badges, ...snapshot.project.units], snapshot.project.groups, snapshot.project.paintStrokes);
@@ -54,7 +73,7 @@ export default function RenderApp() {
   const previewTime = imageExport ? snapshot.previewTime : snapshot.recording ? snapshot.recording.initialFrame.previewTime : range.start;
   const preview = Number.isFinite(previewTime);
   return <div id="render-surface" className="render-surface">
-    <MapCanvas ref={mapRef} initialView={snapshot.recording?.initialFrame.view ?? snapshot.view} referenceZoom={snapshot.recording?.referenceZoom} groups={snapshot.scene.groups} battleReplay={snapshot.battle} badges={snapshot.scene.badges} units={snapshot.scene.units} draft={null} selectedId={null} mode="export" preview={preview} previewTime={previewTime} animationRange={range} animationDuration={snapshot.duration ?? snapshot.project.playbackDuration} lines={snapshot.scene.lines} paintStrokes={snapshot.scene.paintStrokes} lineDraft={null} renderMode onStatus={setMapStatus} onView={() => {}} />
+    <MapCanvas ref={mapRef} territory={snapshot.scene.territory ?? snapshot.project.territory} initialView={snapshot.recording?.initialFrame.view ?? snapshot.view} referenceZoom={snapshot.recording?.referenceZoom} groups={snapshot.scene.groups} battleReplay={snapshot.battle} badges={snapshot.scene.badges} units={snapshot.scene.units} draft={null} selectedId={null} mode="export" preview={preview} previewTime={previewTime} animationRange={range} animationDuration={snapshot.duration ?? snapshot.project.playbackDuration} lines={snapshot.scene.lines} paintStrokes={snapshot.scene.paintStrokes} lineDraft={null} renderMode onStatus={setMapStatus} onView={() => {}} />
     {!imageExport && snapshot.showDate && range && <time ref={dateRef} className="video-date-stamp">{videoDate(previewTime)}</time>}
   </div>;
 }

@@ -3,6 +3,7 @@ import { BADGE_SIZES, MAX_LINES, MAX_LINE_POINTS, routeError, visibilityError } 
 import { validatePaintStrokes } from "./paint.js";
 import { DEFAULT_GROUP, normalizeGroups, normalizeCombat, validateOwnership, validateBattles, hydrateSnapshot } from "./combat.js";
 import { MAX_BADGES } from "./combat.js";
+import { normalizeTerritory, TERRITORY_DEFAULTS, validateTerritoryGroups } from "./territory.js";
 export { MAX_BADGES } from "./combat.js";
 
 const DEFAULT_BADGE_SYMBOL = "helmet";
@@ -14,7 +15,7 @@ export const DEFAULT_VIEW = {
   mapTypeId: "roadmap",
   heading: 0,
 };
-export const EMPTY_PROJECT = { version: 7, view: DEFAULT_VIEW, groups: [DEFAULT_GROUP], badges: [], units: [], lines: [], paintStrokes: [], playbackDuration: 30, battles: [], battleAssets: {} };
+export const EMPTY_PROJECT = { version: 9, territory: { ...TERRITORY_DEFAULTS }, view: DEFAULT_VIEW, groups: [DEFAULT_GROUP], badges: [], units: [], lines: [], paintStrokes: [], playbackDuration: 30, battles: [], battleAssets: {} };
 export const MAX_UNITS = 500;
 const MAX_PROJECT_BYTES = 24 * 1024 * 1024;
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -52,12 +53,12 @@ export function validateImageData(source) {
 export async function validateProject(input, normalizeImage = validateImageData) {
   if (
     !input ||
-    ![1, 2, 3, 4, 5, 6, 7].includes(input.version) ||
+    ![1, 2, 3, 4, 5, 6, 7, 8, 9].includes(input.version) ||
     !Array.isArray(input.badges) ||
     input.badges.length > MAX_BADGES
   ) {
     throw new Error(
-      `Choose a Malaya World War II version 1–7 file with at most ${MAX_BADGES} badges.`,
+      `Choose a Malaya World War II version 1–9 file with at most ${MAX_BADGES} badges.`,
     );
   }
   const groups = normalizeGroups(input.version < 7 ? [DEFAULT_GROUP] : input.groups);
@@ -123,6 +124,7 @@ export async function validateProject(input, normalizeImage = validateImageData)
     const visibilityProblem = visibilityError(visibility);
     if (visibilityProblem) throw new Error(visibilityProblem);
     badges.push({
+      territory: normalizeTerritory(input.version < 8 ? undefined : badge.territory, true),
       groupId: groupId(badge),
       combat: normalizeCombat(badge.combat, badge),
       id: badge.id,
@@ -175,7 +177,8 @@ export async function validateProject(input, normalizeImage = validateImageData)
     units[index].combat = normalizeCombat(inputUnits[index].combat, inputUnits[index]);
   }
   const result = clearInvalidFiringTargets({
-    version: 7,
+    version: 9,
+    territory: normalizeTerritory(input.version < 8 ? undefined : input.version === 8 ? { ...input.territory, mode: "routes", campaign: null } : input.territory),
     groups,
     view: {
       center: { lat: view.center.lat, lng: view.center.lng },
@@ -192,10 +195,13 @@ export async function validateProject(input, normalizeImage = validateImageData)
     battleAssets: input.version < 7 ? {} : input.battleAssets ?? {},
   });
   validateOwnership(result);
+  validateTerritoryGroups(result.territory, result.groups);
   validateBattles(result);
   for (const replay of result.battles) {
     const snapshot = hydrateSnapshot(replay, result.battleAssets);
-    await validateProject({ ...snapshot, version: 7, view: result.view, playbackDuration, battles: [], battleAssets: {} }, normalizeImage);
+    const normalized = await validateProject({ ...snapshot, version: input.version < 8 ? 7 : input.version, view: result.view, playbackDuration, battles: [], battleAssets: {} }, normalizeImage);
+    replay.snapshot.territory = normalized.territory;
+    for (let i = 0; i < replay.snapshot.badges.length; i++) replay.snapshot.badges[i].territory = normalized.badges[i].territory;
   }
   return checkProjectSize(result);
 }

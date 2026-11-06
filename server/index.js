@@ -14,6 +14,7 @@ import { validatePaintStrokes } from "../src/paint.js";
 import { validateOwnership, validateBattles, replayRange, MAX_BADGES } from "../src/combat.js";
 import { UNIT_KINDS } from "../src/symbols.js";
 import { MAX_RECORDING_FRAMES, VIDEO_FPS, VIDEO_REQUEST_LIMIT } from "../src/video.js";
+import { normalizeTerritory, validateTerritoryGroups } from "../src/territory.js";
 import { previewApi } from "./previews.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -77,9 +78,15 @@ function validVideoView(view) {
 
 function validate(input) {
   const project = input?.project;
-  if (!project || ![6, 7].includes(project.version) || !Array.isArray(project.badges) || project.badges.length > MAX_BADGES || !Array.isArray(project.units) || project.units.length > 500 || !Array.isArray(project.lines) || project.lines.length > 200) throw new Error(`Choose a valid Malaya World War II map with at most ${MAX_BADGES} badges, 500 symbols, and 200 lines.`);
+  if (!project || ![6, 7, 8, 9].includes(project.version) || !Array.isArray(project.badges) || project.badges.length > MAX_BADGES || !Array.isArray(project.units) || project.units.length > 500 || !Array.isArray(project.lines) || project.lines.length > 200) throw new Error(`Choose a valid Malaya World War II map with at most ${MAX_BADGES} badges, 500 symbols, and 200 lines.`);
   validatePaintStrokes(project.paintStrokes);
-  if (project.version === 7) { validateOwnership(project); validateBattles(project); }
+  if (project.version >= 8) {
+    const territory = normalizeTerritory(project.territory);
+    if (project.version < 9 && territory.mode !== "routes") throw new Error("Historical land areas require project version 9.");
+    validateTerritoryGroups(territory, project.groups);
+    project.badges.forEach((badge) => normalizeTerritory(badge.territory, true));
+  }
+  if (project.version >= 7) { validateOwnership(project); validateBattles(project); }
   if (input.battleReplayId && !project.battles?.some((replay) => replay.id === input.battleReplayId)) throw new Error("The selected battle replay does not exist.");
   if (Buffer.byteLength(JSON.stringify(project)) > 24 * 1024 * 1024) throw new Error("The map exceeds the 24 MB project limit.");
   for (const badge of project.badges) {
@@ -113,9 +120,15 @@ function validate(input) {
 
 function validateImageInput(input) {
   const project = input?.project;
-  if (!project || ![6, 7].includes(project.version) || !Array.isArray(project.badges) || project.badges.length > MAX_BADGES || !Array.isArray(project.units) || project.units.length > 500 || !Array.isArray(project.lines) || project.lines.length > 200) throw new Error(`Choose a valid Malaya World War II map with at most ${MAX_BADGES} badges, 500 symbols, and 200 lines.`);
+  if (!project || ![6, 7, 8, 9].includes(project.version) || !Array.isArray(project.badges) || project.badges.length > MAX_BADGES || !Array.isArray(project.units) || project.units.length > 500 || !Array.isArray(project.lines) || project.lines.length > 200) throw new Error(`Choose a valid Malaya World War II map with at most ${MAX_BADGES} badges, 500 symbols, and 200 lines.`);
   validatePaintStrokes(project.paintStrokes);
-  if (project.version === 7) { validateOwnership(project); validateBattles(project); }
+  if (project.version >= 8) {
+    const territory = normalizeTerritory(project.territory);
+    if (project.version < 9 && territory.mode !== "routes") throw new Error("Historical land areas require project version 9.");
+    validateTerritoryGroups(territory, project.groups);
+    project.badges.forEach((badge) => normalizeTerritory(badge.territory, true));
+  }
+  if (project.version >= 7) { validateOwnership(project); validateBattles(project); }
   if (input.battleReplayId && !project.battles?.some((replay) => replay.id === input.battleReplayId)) throw new Error("The selected battle replay does not exist.");
   if (Buffer.byteLength(JSON.stringify(project)) > 24 * 1024 * 1024) throw new Error("The map exceeds the 24 MB project limit.");
   const { view, logicalSize, scale, previewTime } = input;
@@ -140,9 +153,9 @@ async function captureMapImage(input) {
     await page.goto(`${renderOrigin}/render.html`, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => !!window.fieldmarkRender);
     await page.evaluate((value) => window.fieldmarkRender.load(value), input);
-    await page.waitForFunction(() => window.fieldmarkRender?.ready || window.fieldmarkRender?.status === "error", { timeout: 30000 });
+    await page.waitForFunction(() => window.fieldmarkRender?.ready || window.fieldmarkRender?.status === "error", { timeout: 300000 });
     const status = await page.evaluate(() => window.fieldmarkRender?.status);
-    if (status !== "ready") throw new Error("Google Maps could not be loaded for the picture.");
+    if (status !== "ready") throw new Error(await page.evaluate(() => window.fieldmarkRender?.error) || "Google Maps could not be loaded for the picture.");
     await page.evaluate(async () => {
       await document.fonts.ready;
       await Promise.all([...document.images].map((image) => image.decode().catch(() => {})));
@@ -207,7 +220,8 @@ async function render(job) {
     await page.evaluate((value) => window.fieldmarkRender.load(value), input.recording ? {
       ...input, recording: { referenceZoom: input.recording.referenceZoom, initialFrame: input.recording.frames[0] },
     } : input);
-    await page.waitForFunction(() => window.fieldmarkRender?.ready, { timeout: 30000 });
+    await page.waitForFunction(() => window.fieldmarkRender?.ready || window.fieldmarkRender?.status === "error", { timeout: 300000 });
+    if (!await page.evaluate(() => window.fieldmarkRender.ready)) throw new Error(await page.evaluate(() => window.fieldmarkRender.error) || "The map could not be loaded for video rendering.");
     await page.evaluate(async () => {
       await document.fonts.ready;
       await Promise.all([...document.images].map((image) => image.decode().catch(() => {})));

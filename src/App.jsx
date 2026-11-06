@@ -41,6 +41,8 @@ import MapCanvas from "./MapCanvas.jsx";
 import PreviewLibrary from "./PreviewLibrary.jsx";
 import GroupTabs from "./GroupTabs.jsx";
 import ForceSettings from "./ForceSettings.jsx";
+import TerritorySettings, { BadgeTerritorySettings } from "./TerritorySettings.jsx";
+import { BADGE_TERRITORY_DEFAULTS } from "./territory.js";
 import BattleControls from "./BattleControls.jsx";
 import BattlePanel from "./BattlePanel.jsx";
 import useBattle from "./useBattle.js";
@@ -563,6 +565,7 @@ export default function App() {
       flag: "",
       groupId: activeGroupId,
       combat: defaultCombat({}),
+      territory: { ...BADGE_TERRITORY_DEFAULTS },
       symbol: DEFAULT_BADGE_SYMBOL,
       symbolImage: "",
       stars: 0,
@@ -845,6 +848,7 @@ export default function App() {
       ...draft,
       id: crypto.randomUUID(),
       label: `${draft.label.trim()} (copy)`.slice(0, 80),
+      territory: { ...BADGE_TERRITORY_DEFAULTS, ...draft.territory },
       route: draft.route.map((stop) => ({ ...stop, id: crypto.randomUUID() })),
       visibility: { ...draft.visibility },
     };
@@ -1412,8 +1416,9 @@ export default function App() {
               { id: "text", label: "Text", icon: Type, description: "Add a text label to the map. Click to place it, then drag to reposition it. Choose when it appears or disappears during playback." },
               { id: "lines", label: "Lines", icon: Route, description: "Trace boundaries and paths by clicking points on the map. Finish drawing, then drag handles to reshape the line or add bends. Lines appear red on Map and white on Satellite." },
               { id: "paint", label: "Paint", icon: Paintbrush, description: "Drag on the map to color an area. Choose a brush size, shape, color, and transparency, or erase painted areas. Paint stays attached to the map as you zoom." },
+              { id: "territory", label: "Territory", icon: Flag, description: "Configure automatic territory capture and frontlines from saved badge routes." },
             ].map(({ id, label, description, icon: Icon }) => <HelpTooltip key={id} label={label} description={description}><button className={section === id ? "active" : ""} aria-label={label} aria-description={description} aria-pressed={section === id} onClick={() => switchSection(id)}><Icon size={19} aria-hidden="true" /></button></HelpTooltip>)}</div>
-            {section === "paint" ? <div className="paint-controls">
+            {section === "territory" ? <TerritorySettings project={project} onChange={changeGroups} /> : section === "paint" ? <div className="paint-controls">
               <PaintVisibilityEditor key={activeGroupId} group={project.groups.find((group) => group.id === activeGroupId)} onSave={(paintVisibility) => setProject((current) => ({ ...current, groups: current.groups.map((group) => group.id === activeGroupId ? { ...group, paintVisibility } : group) }))} />
               
               <div className="paint-options" aria-label="Paint tool">{["paint", "erase"].map((tool) => <button key={tool} className={brush.tool === tool ? "active" : ""} onClick={() => setBrush((value) => ({ ...value, tool }))}>{tool === "paint" ? "Paint" : "Eraser"}</button>)}</div>
@@ -1553,6 +1558,7 @@ export default function App() {
                 <SymbolPicker value={draft.symbol} image={draft.symbolImage} onSelect={(symbol) => updateDraft({ symbol })} onImage={(event) => uploadFeatureImage(event, "badge")} uploading={uploading} error={formError} />
                 <label className="field-label">Stars <span>{draft.stars ?? 0} / 5</span><select value={draft.stars ?? 0} onChange={(event) => updateDraft({ stars: Number(event.target.value) })}>{[0, 1, 2, 3, 4, 5].map((count) => <option key={count} value={count}>{count === 0 ? "0 · No stars" : `${count} · ${"★".repeat(count)}`}</option>)}</select></label>
                 <ForceSettings feature={draft} groups={project.groups} onChange={updateDraft} />
+                {project.territory?.mode === "campaign" ? <p className="field-hint">Territory follows historical land areas. Configure its colors in Territory; badge routes only animate this formation.</p> : <BadgeTerritorySettings badge={draft} onChange={updateDraft} />}
                 <label className="field-label">Troop number<input type="number" min="0" max={Number.MAX_SAFE_INTEGER} step="1" required value={draft.troopCount ?? 0} onChange={(event) => { const troopCount = Number(event.target.value); if (Number.isSafeInteger(troopCount) && troopCount >= 0) updateDraft({ troopCount, route: draft.route.map((stop, index) => index === 0 ? { ...stop, troopCount } : stop) }); }} /></label>
                 
                 <SizePicker formation value={draft.size} onChange={(size) => updateDraft({ size, troopCount: BADGE_FORMATIONS[size].troops })} />
@@ -1649,6 +1655,7 @@ export default function App() {
           {ready && (!exportOpen || exportFrame?.width > 0) && (
             <div inert={pictureExporting} className={exportOpen ? "video-frame" : "map-surface"} style={exportOpen ? { width: exportFrame.width, height: exportFrame.height } : undefined}>
             <MapCanvas
+              territory={visibleProject.territory ?? project.territory}
               key={exportOpen ? `${exportKind}-${exportOrientation}` : "editor"}
               ref={mapRef}
               initialView={exportOpen ? exportCamera : editingView.current ?? initialView}

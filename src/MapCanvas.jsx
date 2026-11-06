@@ -6,6 +6,9 @@ import { createEffectOverlay } from "./effects.js";
 import { createCommandOverlay } from "./command-overlay.js";
 import { sampleBattle, remainingPath, normalizeCombat, nearestEnemy, distance } from "./combat.js";
 import { createPaintOverlay } from "./paint-overlay.js";
+import { createTerritoryOverlay } from "./territory-overlay.js";
+import { createCampaignTerritoryOverlay } from "./territory-campaign-overlay.js";
+import { sphericalInterpolate } from "./geodesy.js";
 import { boxIntersectsViewport, declutterLabels, declutterMarkers, mapViewport, measureMarker, projectedMarkerBox } from "./viewport.js";
 import { HAS_MAP_KEY, MAPS_KEY } from "./maps-config.js";
 import { BADGE_SIZES, MAX_LINE_POINTS, compileRoute, scenarioNightShade, routeError, sampleRoute, scenarioTime, stopLabel } from "./timeline.js";
@@ -75,6 +78,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
   const routeGuides = useRef(new Map());
   const effectOverlay = useRef(null);
   const paintOverlay = useRef(null);
+  const territoryOverlay = useRef(null);
   const markerMeasurements = useRef(null);
   const previewTime = useRef(null);
   const [startView] = useState(initialView);
@@ -164,6 +168,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
     if (live.current.battleForces) time = live.current.battleTime;
     if (live.current.battleReplay && time == null) time = live.current.battleReplay.startAt;
     paintOverlay.current?.setTime(live.current.preview || live.current.renderMode || live.current.battleReplay ? time : null, live.current.groups);
+    territoryOverlay.current?.setTime(time ?? live.current.animationRange?.start ?? 0).catch(() => {});
     previewTime.current = time;
     if (!api) return;
     const battleForces = live.current.battleForces ?? (live.current.battleReplay ? sampleBattle(live.current.battleReplay, time) : null);
@@ -178,7 +183,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
       entry.collisionHidden = false;
       entry.battleOffset = 0;
       const shot = force?.shot;
-      const sample = force ? { position: { lat: force.lat, lng: force.lng }, troopCount: force.count, quantity: force.count, scale: entry.scale, effect: shot ? "firing" : "none", effectStart: shot?.at, firingTargetId: shot?.targetId, moving: !!force.move } : time == null ? null : sampleRoute(entry.route, time, api.spherical.interpolate);
+      const sample = force ? { position: { lat: force.lat, lng: force.lng }, troopCount: force.count, quantity: force.count, scale: entry.scale, effect: shot ? "firing" : "none", effectStart: shot?.at, firingTargetId: shot?.targetId, moving: !!force.move } : time == null ? null : sampleRoute(entry.route, time, sphericalInterpolate);
       const position = sample?.position ?? entry.position;
       entry.currentPosition = typeof position.lat === "function" ? position : { lat: position.lat, lng: position.lng };
       entry.isMoving = !force && !!sample?.moving;
@@ -313,8 +318,23 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
     return () => { paintOverlay.current = null; overlay.dispose(); };
   }, [api]);
 
-  useEffect(() => { paintOverlay.current?.setStrokes(paintStrokes); }, [api, paintStrokes]);
+  useEffect(() => {
+    const hideLegacy = props.territory?.mode === "campaign" && props.territory.campaign?.hideLegacyCapturePaint;
+    paintOverlay.current?.setStrokes(hideLegacy ? paintStrokes.filter((stroke) => !stroke.groupId.startsWith("jp-capture-")) : paintStrokes);
+  }, [api, paintStrokes, props.territory]);
   useEffect(() => { paintOverlay.current?.setBrush(brush, !preview && mode === "paint"); }, [api, brush, preview, mode]);
+
+  useEffect(() => {
+    if (!api) return;
+    const overlay = props.territory?.mode === "campaign" ? createCampaignTerritoryOverlay(api) : createTerritoryOverlay(api);
+    territoryOverlay.current = overlay;
+    return () => { territoryOverlay.current = null; overlay.dispose(); };
+  }, [api, props.territory?.mode]);
+
+  useEffect(() => {
+    territoryOverlay.current?.configure(props.territory, badges, props.groups,
+      previewTime.current ?? props.animationRange?.start ?? 0).catch(() => {});
+  }, [api, props.territory, badges, props.groups, props.animationRange]);
 
   useEffect(() => {
     if (!api) return;
@@ -751,10 +771,14 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
 
   useImperativeHandle(ref, () => ({
     previewAt: drawPreview,
+    async whenTerritoryReady(time) {
+      if (!api) throw new Error("The map is not ready for territory rendering.");
+      await territoryOverlay.current?.ready(time ?? live.current.animationRange?.start ?? 0);
+    },
     sampleFeature(feature, time) {
       if (!api || routeError(feature.route)) return null;
       const route = compileRoute(feature.route, feature.troopCount ?? 0).map((stop) => ({ ...stop, lat: Number(stop.lat), lng: Number(stop.lng) }));
-      return sampleRoute(route, time, api.spherical.interpolate);
+      return sampleRoute(route, time, sphericalInterpolate);
     },
     fitAll() {
       if (!api) return;
@@ -795,6 +819,7 @@ const MapCanvas = forwardRef(function MapCanvas(props, ref) {
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       }
       drawPreview(time);
+      await territoryOverlay.current?.ready(time ?? live.current.animationRange?.start ?? 0);
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     },
     getView() {

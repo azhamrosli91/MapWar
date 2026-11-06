@@ -8,7 +8,8 @@ import { hydrateSnapshot, replayRange } from "./combat.js";
 import { validateProject } from "./data.js";
 import { HAS_MAP_KEY } from "./maps-config.js";
 import { previewRequest, previewUrl } from "./preview-client.js";
-import { timelineRange } from "./timeline.js";
+import { scenarioTime, timelineRange } from "./timeline.js";
+import { territoryEligible } from "./territory.js";
 import usePlayback from "./usePlayback.js";
 
 function PreviewMap({ publication, replay, mobile, headerTarget, drawerTarget, drawerOpen, onOpenOptions }) {
@@ -22,8 +23,12 @@ function PreviewMap({ publication, replay, mobile, headerTarget, drawerTarget, d
   const [fullscreen, setFullscreen] = useState(false);
   const playback = usePlayback(mapRef, range, project.playbackDuration);
   const ready = mapStatus === "ready";
-  // The keyed viewer starts paused at the scenario's first date, without editing state.
-  const initialTime = range?.start;
+  // Visibility windows can add a neutral minute before the first capture.
+  // Skip only that padding for territory previews, keeping the full timeline available.
+  const firstCapture = useMemo(() => !replay && scene.territory?.enabled && scene.territory.mode !== "campaign"
+    ? scene.badges.filter(territoryEligible).reduce((first, badge) => Math.min(first, scenarioTime(badge.route[0]?.dateTime) ?? Infinity), Infinity)
+    : Infinity, [scene, replay]);
+  const initialTime = range && firstCapture >= range.start && firstCapture <= range.start + 60000 ? firstCapture : range?.start;
   const seek = playback.seek;
   useEffect(() => { if (initialTime != null) seek(initialTime); }, [initialTime, seek]);
   useEffect(() => {
@@ -67,7 +72,7 @@ function PreviewMap({ publication, replay, mobile, headerTarget, drawerTarget, d
     {fullscreen ? <header className="preview-header preview-fullscreen-header">{controls}</header> : headerTarget && createPortal(controls, headerTarget)}
     {mobile && drawerTarget && createPortal(<div className="preview-drawer-map-controls">{timeline}{navigation}</div>, drawerTarget)}
     <div className="preview-map-viewport">
-      {HAS_MAP_KEY && <MapCanvas ref={mapRef} initialView={project.view} groups={scene.groups} badges={scene.badges} units={scene.units} lines={scene.lines} paintStrokes={scene.paintStrokes}
+      {HAS_MAP_KEY && <MapCanvas ref={mapRef} territory={scene.territory ?? project.territory} initialView={project.view} groups={scene.groups} badges={scene.badges} units={scene.units} lines={scene.lines} paintStrokes={scene.paintStrokes}
         readOnly mode="view" hideNavigationControls={mobile} draft={null} lineDraft={null} selectedId={null} battleReplay={battleReplay}
         preview={!!range} previewTime={playback.cursor} playing={playback.playing} animationRange={range} animationDuration={project.playbackDuration}
         onView={() => {}} onStatus={setMapStatus} />}

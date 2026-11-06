@@ -44,6 +44,7 @@ export function createPaintOverlay(api, onStroke) {
     const h = Math.round(height * ratio);
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
     if (strokeCanvas.width !== w || strokeCanvas.height !== h) { strokeCanvas.width = w; strokeCanvas.height = h; }
+    if (groupCanvas.width !== w || groupCanvas.height !== h) { groupCanvas.width = w; groupCanvas.height = h; }
     return true;
   }
 
@@ -56,11 +57,16 @@ export function createPaintOverlay(api, onStroke) {
 
   function draw() {
     frame = 0;
+    // Empty/invisible paint needs no viewport-sized backing buffers during camera motion.
+    if (!active && !enabled && !strokes.some((stroke) => !hiddenGroups.has(stroke.groupId))) {
+      surface.hidden = true;
+      return;
+    }
+    surface.hidden = false;
     if (!resize()) return;
     const projection = overlay.getProjection();
     const ratio = window.devicePixelRatio || 1;
     const output = canvas.getContext("2d");
-    groupCanvas.width = canvas.width; groupCanvas.height = canvas.height;
     const ctx = groupCanvas.getContext("2d");
     output.setTransform(ratio, 0, 0, ratio, 0, 0);
     output.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);

@@ -45,6 +45,13 @@ export default function GroupTabs({ project, activeId, onSelect, onChange, locke
   function remove() {
     if (locked || !settingsGroup || !destination || project.groups.length === 1) return;
     const updated = { ...project, groups: project.groups.filter((item) => item.id !== settingsGroup.id) };
+    if (project.territory?.campaign) {
+      const campaign = { ...project.territory.campaign };
+      for (const key of ["initialGroupId", "captureGroupId"]) if (campaign[key] === settingsGroup.id) campaign[key] = destination;
+      updated.territory = campaign.initialGroupId === "delete" || campaign.captureGroupId === "delete" || campaign.initialGroupId === campaign.captureGroupId
+        ? { ...project.territory, enabled: false, mode: "routes", campaign: null }
+        : { ...project.territory, campaign };
+    }
     for (const key of ["badges", "units", "lines", "paintStrokes"]) updated[key] = project[key].flatMap((item) => item.groupId !== settingsGroup.id ? [item] : destination === "delete" ? [] : [{ ...item, groupId: destination }]);
     onChange(clearInvalidFiringTargets(updated));
     if (activeId === settingsGroup.id) onSelect(updated.groups[0].id);

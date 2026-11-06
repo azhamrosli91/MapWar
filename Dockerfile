@@ -20,7 +20,7 @@ RUN npm ci --omit=dev \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/dist ./dist
 COPY server ./server
-COPY src/timeline.js src/paint.js src/combat.js src/symbols.js src/video.js src/project-validation.js ./src/
+COPY src/timeline.js src/paint.js src/combat.js src/symbols.js src/video.js src/project-validation.js src/territory.js src/geodesy.js ./src/
 RUN mkdir -p /app/data/previews && chown -R node:node /app/data
 USER node
 EXPOSE 4173
